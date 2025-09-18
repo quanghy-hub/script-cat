@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Inline Translate: Ctrl/Swipe → Insert Below (Paragraph/Gemini)
 // @namespace    vn.inline.translate.ctrl.swipe
-// @version      1.1.0
-// @description  Dịch ngay dưới văn bản gốc: Ctrl trên vị trí trỏ hoặc vuốt trái/phải. Chọn chế độ Dòng/câu hoặc Đoạn. Nhà cung cấp: Google miễn phí hoặc Gemini (API key). Panel cài đặt trong ScriptCat.
+// @version      1.1.1
+// @description  Dịch ngay dưới văn bản gốc: Ctrl tại vị trí trỏ hoặc vuốt ngang. Chọn Đoạn/Câu, Google hoặc Gemini. Chọn hướng vuốt. Không dịch khi đang bôi đen.
 // @author       you
 // @match        http://*/*
 // @match        https://*/*
@@ -22,11 +22,13 @@
   const HOST_KEY = `inline_t_cfg::${location.host}`;
   const defaults = {
     targetLang: navigator.language?.slice(0,2) || 'vi',
-    mode: 'paragraph',       // 'sentence' | 'paragraph'
-    provider: 'google',      // 'google' | 'gemini'
+    mode: 'paragraph',           // 'sentence' | 'paragraph'
+    provider: 'google',          // 'google' | 'gemini'
     geminiKey: '',
     geminiModel: 'gemini-1.5-flash',
     swipeEnabled: true,
+    swipeLeft: true,             // mới: bật vuốt trái
+    swipeRight: true,            // mới: bật vuốt phải
     swipePx: 60,
     swipeSlopeMax: 0.5,
     fontScale: 0.95,
@@ -55,7 +57,6 @@
   .ilt-tag{display:inline-block;padding:1px 6px;border-radius:999px;border:1px solid #555;color:#ddd;font-size:12px;margin-left:6px}
   .ilt-trans{margin-top:6px;padding:6px 8px;border-left:3px solid #999;border-radius:4px;background:var(--ilt-bg,transparent);color:var(--ilt-fg,#666);font-style:var(--ilt-it,italic);font-size:var(--ilt-fs,0.95em)}
   .ilt-trans[data-state="loading"]{opacity:0.7}
-  .ilt-trans .ilt-meta{font-size:11px;opacity:0.75;margin-bottom:2px}
   `;
   document.head.appendChild(style);
 
@@ -78,8 +79,8 @@
       </div>
       <div class="ilt-row"><label>Provider</label>
         <select id="ilt-provider">
-          <option value="google" ${cfg.provider==='google'?'selected':''}>Google (miễn phí)</option>
-          <option value="gemini" ${cfg.provider==='gemini'?'selected':''}>Gemini (API)</option>
+          <option value="google" ${cfg.provider==='google'?'selected':''}>Google</option>
+          <option value="gemini" ${cfg.provider==='gemini'?'selected':''}>Gemini</option>
         </select>
       </div>
       <div class="ilt-row"><label>Gemini Key</label>
@@ -88,9 +89,14 @@
       <div class="ilt-row"><label>Gemini Model</label>
         <input id="ilt-gmodel" type="text" value="${cfg.geminiModel}">
       </div>
+
       <div class="ilt-row"><label>Swipe</label>
         <input id="ilt-swipe" type="checkbox" ${cfg.swipeEnabled?'checked':''}>
-        <span>Vuốt trái/phải để dịch</span>
+        <span>Bật vuốt để dịch</span>
+      </div>
+      <div class="ilt-row"><label>Hướng vuốt</label>
+        <span><input id="ilt-left" type="checkbox" ${cfg.swipeLeft?'checked':''}> Trái</span>
+        <span><input id="ilt-right" type="checkbox" ${cfg.swipeRight?'checked':''}> Phải</span>
       </div>
       <div class="ilt-row"><label>Swipe px</label>
         <input id="ilt-swipePx" type="number" min="24" max="300" step="2" value="${cfg.swipePx}">
@@ -113,10 +119,9 @@
       <div class="ilt-row rowsp">
         <button id="ilt-save">Save</button>
         <button id="ilt-close">Close</button>
-        <button id="ilt-warn">Test quyền mạng</button>
       </div>
       <div style="margin-top:6px;font-size:12px;color:#aaa">
-        Dùng: Trỏ vào văn bản và nhấn <b>Ctrl</b>, hoặc vuốt ngang.
+        Dùng: Trỏ vào văn bản và nhấn <b>Ctrl</b>, hoặc vuốt ngang theo hướng đã bật.
       </div>
     `;
     document.body.appendChild(panel);
@@ -128,6 +133,8 @@
       cfg.geminiKey = $('#ilt-gkey').value.trim();
       cfg.geminiModel = $('#ilt-gmodel').value.trim() || 'gemini-1.5-flash';
       cfg.swipeEnabled = $('#ilt-swipe').checked;
+      cfg.swipeLeft = $('#ilt-left').checked;
+      cfg.swipeRight = $('#ilt-right').checked;
       cfg.swipePx = clamp(+$('#ilt-swipePx').value, 24, 300, cfg.swipePx);
       cfg.fontScale = clamp(+$('#ilt-fs').value, 0.6, 1.2, cfg.fontScale);
       cfg.italic = $('#ilt-it').checked;
@@ -137,9 +144,9 @@
       saveCfg(); applyRuntimeStyle(); notify('Saved');
     };
     $('#ilt-close').onclick = () => { panel.remove(); panel=null; };
-    $('#ilt-warn').onclick = () => notify('Nếu Gemini: cần API key hợp lệ và @connect generativelanguage.googleapis.com');
     return panel;
   }
+
   if (typeof GM_registerMenuCommand === 'function') {
     GM_registerMenuCommand('⚙️ Inline Translate: Cài đặt', () => { buildPanel(); });
     GM_registerMenuCommand('🗑 Xóa tất cả bản dịch', () => {
@@ -167,6 +174,10 @@
   document.addEventListener('mousemove', e => { lastMouse.x=e.clientX; lastMouse.y=e.clientY; }, {passive:true});
 
   function getTextAtPoint(x,y){
+    // Không dùng vùng bôi đen: nếu có selection khác 0, bỏ qua
+    const sel = window.getSelection?.();
+    if (sel && !sel.isCollapsed) return null;
+
     const range = caretRangeFromPointSafe(x,y);
     if(!range || !range.startContainer) return null;
     let node = range.startContainer;
@@ -234,8 +245,7 @@
           try{
             const data = res.response || JSON.parse(res.responseText);
             const out = (data[0]||[]).map(a=>a[0]).join('');
-            const src = (data[2] && data[2]) || 'auto';
-            resolve({translated: out, src});
+            resolve({translated: out});
           }catch(e){ reject(e); }
         }, onerror: err=>reject(err)
       });
@@ -247,14 +257,10 @@
       if(!cfg.geminiKey){ reject(new Error('Thiếu Gemini API key')); return; }
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.geminiModel)}:generateContent?key=${encodeURIComponent(cfg.geminiKey)}`;
       const body = {
-        contents: [{
-          role: 'user',
-          parts: [{ text:
-`Translate the text strictly into ${target}. Preserve meaning. Output translation only, no extra notes.
+        contents: [{ role: 'user', parts: [{ text:
+`Translate the text strictly into ${target}. Output translation only.
 
-TEXT:
-${text}` }]
-        }],
+${text}` }]}],
         generationConfig: { temperature: 0 }
       };
       GM_xmlhttpRequest({
@@ -267,7 +273,7 @@ ${text}` }]
             const cand = data.candidates && data.candidates[0];
             const t = cand && cand.content && cand.content.parts && cand.content.parts[0] && cand.content.parts[0].text;
             if(!t) throw new Error('Gemini: không nhận được văn bản');
-            resolve({ translated: t.trim(), src: 'auto' });
+            resolve({ translated: t.trim() });
           }catch(e){ reject(e); }
         },
         onerror: err=>reject(err)
@@ -276,7 +282,7 @@ ${text}` }]
   }
 
   function insertTranslation(container, original){
-    const key = original.slice(0,200); // id ngắn
+    const key = original.slice(0,200);
     const existing = Array.from(container.querySelectorAll(':scope > .ilt-trans')).find(e => e.dataset.orig === key);
     if (existing) { existing.remove(); return; }
 
@@ -284,42 +290,53 @@ ${text}` }]
     div.className = 'ilt-trans';
     div.dataset.orig = key;
     div.dataset.state = 'loading';
-    div.innerHTML = `<div class="ilt-meta">Translating… (${cfg.provider})</div>`;
+    div.textContent = 'Translating…';
     container.appendChild(div);
 
-    translate(original, cfg.targetLang).then(({translated, src})=>{
+    translate(original, cfg.targetLang).then(({translated})=>{
       div.dataset.state = 'done';
-      const lang = cfg.targetLang;
-      div.innerHTML = `
-        <div class="ilt-meta">➡️ ${src} → ${lang} · ${cfg.mode} · ${cfg.provider}</div>
-        <div class="ilt-txt">${escapeHTML(translated)}</div>
-      `;
+      // Không chèn dòng meta en→vi
+      div.innerHTML = `<div class="ilt-txt">${escapeHTML(translated)}</div>`;
     }).catch(err=>{
       div.dataset.state='error';
-      div.innerHTML = `<div class="ilt-meta">Error: ${escapeHTML(String(err?.message||err))}</div>`;
+      div.textContent = `Error: ${String(err?.message||err)}`;
       setTimeout(()=>div.remove(), 3000);
     });
   }
   function escapeHTML(s){ return s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
   // ---------- Triggers ----------
+  // Ctrl trên vị trí trỏ. Không dịch nếu đang bôi đen.
+  let lastMouse = {x:0,y:0};
+  document.addEventListener('mousemove', e => { lastMouse.x=e.clientX; lastMouse.y=e.clientY; }, {passive:true});
   document.addEventListener('keydown', e=>{
     if(e.key!=='Control') return;
     const active = document.activeElement;
     if (active && (active.isContentEditable || /^(input|textarea|select)$/i.test(active.tagName))) return;
+    const sel = window.getSelection?.();
+    if (sel && !sel.isCollapsed) return; // không hỗ trợ bôi đen để dịch
     const hit = getTextAtPoint(lastMouse.x,lastMouse.y);
     if(!hit) return;
     if(shouldSkip(hit.text)) return;
     insertTranslation(hit.container, hit.text);
   }, true);
 
+  // Vuốt ngang có chọn hướng
   let swipe = {startX:0,startY:0};
   function pointerDown(e){ if(!cfg.swipeEnabled) return; swipe.startX=e.clientX; swipe.startY=e.clientY; }
   function pointerUp(e){
     if(!cfg.swipeEnabled) return;
     const dx=e.clientX-swipe.startX, dy=e.clientY-swipe.startY;
-    if(Math.abs(dx)<cfg.swipePx) return;
-    if(Math.abs(dy)/Math.max(Math.abs(dx),1) > cfg.swipeSlopeMax) return;
+    const adx=Math.abs(dx), ady=Math.abs(dy);
+    if(adx<cfg.swipePx) return;
+    if(ady/Math.max(adx,1) > cfg.swipeSlopeMax) return;
+
+    // Kiểm tra hướng
+    if (dx>0 && !cfg.swipeRight) return; // vuốt phải
+    if (dx<0 && !cfg.swipeLeft) return;  // vuốt trái
+
+    const sel = window.getSelection?.();
+    if (sel && !sel.isCollapsed) return; // không dịch khi có selection
     const hit = getTextAtPoint(swipe.startX, swipe.startY);
     if(!hit) return;
     if(shouldSkip(hit.text)) return;
@@ -336,7 +353,6 @@ ${text}` }]
   const mo = new MutationObserver(()=>applyRuntimeStyle());
   mo.observe(document.documentElement,{subtree:true, childList:true});
 
-  // ignore panel clicks
   document.addEventListener('pointerdown', e=>{ if(panel && panel.contains(e.target)) e.stopPropagation(); }, true);
 
 })();
