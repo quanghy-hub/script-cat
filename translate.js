@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         translate
 // @namespace    vn.inline.translate.ctrl.swipe
-// @version      1.1.0
+// @version      1.7.0
 // @description  Ctrl (desktop) hoặc Vuốt ngang (mobile) để chèn bản dịch ngay dưới đoạn/câu. Tự động: nếu nguồn KHÔNG phải tiếng Việt → dịch sang VI; nếu nguồn là tiếng Việt → dịch sang EN. Nhấn lại để hoàn tác. Cấu hình dùng chung mọi trang. Không có “giữ lâu”.
 // @author       you
 // @updateURL   https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/translate.js
