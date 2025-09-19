@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         Gestures (Open/Close Tab)
 // @namespace    https://github.com/yourname/hold-to-search + vm-unified-gestures-open-tab
-// @version      1.0.0-merge.20250919
+// @version      1.0.0
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
 // @run-at       document-start
-// @updateURL   https://raw.githubusercontent.com/<user>/<repo>/<branch>/<path>/your-script.user.js
-// @downloadURL https://raw.githubusercontent.com/<user>/<repo>/<branch>/<path>/your-script.user.js
+// @updateURL   https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/gestures.js
+// @downloadURL https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/gestures.js
 // @noframes
 // @grant        GM_registerMenuCommand
 // @grant        GM_getValue
