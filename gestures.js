@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gestures (Open/Close Tab)
 // @namespace    https://github.com/yourname/hold-to-search + vm-unified-gestures-open-tab
-// @version      1.0.0
+// @version      1.1.1
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
 // @run-at       document-start
