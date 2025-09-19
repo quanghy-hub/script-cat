@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Forum destop
 // @namespace    forum-fit-auto-wide
-// @version      1.5.0-combined
+// @version      1.5.0
 // @description  Auto-wide forums + on-page modal settings (Alt+Shift+F). Kèm điều hướng trang bằng cuộn ngang: trái=trang trước, phải=trang sau; ≥3 lần liên tiếp: trái=trang đầu, phải=trang cuối. Tránh vùng cuộn ngang nội bộ.
 // @author       you
 // @match        http://*/*
