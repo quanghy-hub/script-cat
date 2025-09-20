@@ -1,12 +1,12 @@
 // ==UserScript==
-// @name         Gestures (Open/Close Tab)
+// @name         Gestures
 // @namespace    https://github.com/yourname/hold-to-search + vm-unified-gestures-open-tab
-// @version      1.1.1
+// @version      1.1.3
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
 // @run-at       document-start
-// @updateURL   https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/gestures.js
-// @downloadURL https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/gestures.js
+// @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/gestures.js
+// @downloadURL  https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/gestures.js
 // @noframes
 // @grant        GM_registerMenuCommand
 // @grant        GM_getValue
@@ -18,11 +18,40 @@
 // ==/UserScript==
 
 /* =========================
+   GLOBAL GUARD: chống trùng mở tab + chặn click
+   ========================= */
+(() => {
+  'use strict';
+  const G = (window.__GESTURES_GUARD__ ||= {
+    killUntil: 0,
+    recentOpenAt: 0,
+    recentKey: '',
+    suppress(ms = 1000) { this.killUntil = Date.now() + ms; },
+    canOpen(key = '') {
+      const now = Date.now();
+      if (now - this.recentOpenAt < 500 && (!key || key === this.recentKey)) return false;
+      this.recentOpenAt = now; this.recentKey = key; return true;
+    }
+  });
+
+  if (!window.__GESTURES_GUARD_LISTENERS__) {
+    window.__GESTURES_GUARD_LISTENERS__ = true;
+    const eat = (ev) => {
+      if (Date.now() <= G.killUntil) { ev.preventDefault(); ev.stopImmediatePropagation(); ev.stopPropagation(); }
+    };
+    addEventListener('click', eat, true);
+    addEventListener('auxclick', eat, true);
+    addEventListener('contextmenu', eat, true);
+  }
+})();
+
+/* =========================
    MODULE 1: Hold-to-Search
    (Selection-first, Touch-friendly)
    ========================= */
 (() => {
   'use strict';
+  const G = window.__GESTURES_GUARD__;
 
   // ===== Config & Storage =====
   const ENGINES = {
@@ -65,19 +94,22 @@
   });
 
   // ===== Utils =====
-  const isEditable = el => el && (el.isContentEditable || /^(input|textarea|select)$/i.test(el.tagName));
+  const isEditable = el => el && (el.isContentEditable || /^(input|textarea|select|button)$/i.test(el.tagName));
   const buildSearchURL = (q) => {
     const tpl = ENGINES[engineKey]?.url || ENGINES.google.url;
     return tpl.replace('%s', encodeURIComponent(q));
   };
-  const openURL = (url) => {
+  const openURL = (url, key='hold-search') => {
+    if (!G.canOpen(key)) return;
     try {
-      if (openBG) { GM_openInTab(url, { active:false, insert:true, setParent:true }); return; }
-      GM_openInTab(url, { active:true, insert:true, setParent:true });
+      if (openBG) { GM_openInTab(url, { active:false, insert:true, setParent:true }); }
+      else { GM_openInTab(url, { active:true, insert:true, setParent:true }); }
     } catch {
-      if (openBG) { const w=window.open(url,'_blank','noopener'); try{window.focus();}catch{} return w; }
-      return window.open(url,'_blank');
+      if (openBG) { const w=window.open(url,'_blank','noopener'); try{window.focus();}catch{} }
+      else window.open(url,'_blank');
     }
+    // Chặn click tổng hợp của trình duyệt sau khi mở
+    G.suppress(900);
   };
 
   // Snapshot vùng bôi
@@ -102,9 +134,7 @@
   let holdTimer = null;
   let startX = 0, startY = 0;
 
-  function clearHold(){
-    if (holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
-  }
+  function clearHold(){ if (holdTimer){ clearTimeout(holdTimer); holdTimer = null; } }
   function triggerSearch(){
     holdTimer = null;
     let q = '';
@@ -114,7 +144,7 @@
       q = (sel?.toString() || '').trim();
     }
     if (!q) return;
-    openURL(buildSearchURL(q));
+    openURL(buildSearchURL(q), 'hold-search:'+q);
   }
 
   // Desktop
@@ -137,6 +167,8 @@
       document.removeEventListener('mousemove', move, true);
       document.removeEventListener('mouseup', up, true);
       clearHold();
+      // Sau khi nhả tay, vẫn giữ suppress để tránh click mở thêm
+      // (đã đặt trong triggerSearch nếu đã mở)
     };
     document.addEventListener('mousemove', move, true);
     document.addEventListener('mouseup', up, true);
@@ -179,12 +211,13 @@
    ========================= */
 (() => {
   'use strict';
+  const G = window.__GESTURES_GUARD__;
 
   const STORE_KEY = 'vmug_cfg';
   const DEFAULTS = {
     dblAct: 'open',                 // 'open' | 'close'
     dbl:    { enabled: true,  mode: 'bg' },
-    lpress: { enabled: false, mode: 'bg' },
+    lpress: { enabled: true,  mode: 'bg' }, // bật sẵn long-press
     rclick: { enabled: false, mode: 'bg' },
     dblMs:  280,
     tapTol: 24,
@@ -221,23 +254,13 @@
   }
 
   function saveCfg() {
-    try {
-      // Lưu dạng object hoặc string đều được với VM; giữ nguyên hành vi cũ
-      GM_setValue(STORE_KEY, CFG);
-    } catch {}
+    try { GM_setValue(STORE_KEY, CFG); } catch {}
   }
 
-  function getPath(path, obj = CFG) {
-    return path.split('.').reduce((o, k) => (o ? o[k] : undefined), obj);
-  }
+  function getPath(path, obj = CFG) { return path.split('.').reduce((o, k) => (o ? o[k] : undefined), obj); }
   function setPath(path, val, obj = CFG) {
-    const parts = path.split('.');
-    let o = obj;
-    for (let i = 0; i < parts.length - 1; i++) {
-      const k = parts[i];
-      if (!o[k] || typeof o[k] !== 'object') o[k] = {};
-      o = o[k];
-    }
+    const parts = path.split('.'); let o = obj;
+    for (let i = 0; i < parts.length - 1; i++) { const k = parts[i]; if (!o[k] || typeof o[k] !== 'object') o[k] = {}; o = o[k]; }
     o[parts[parts.length - 1]] = val;
   }
 
@@ -338,7 +361,7 @@
         <button class="vmug-btn" id="vmug-close">Close</button>
       </div>
       <div class="vmug-note">
-        Tips: GM_openInTab dùng <code>insert:true</code> mở tab kề phải. Long-press đã "ăn click" 1 lần để trang gốc không tự điều hướng.
+        Tips: GM_openInTab dùng <code>insert:true</code> mở tab kề phải. Click sau long-press sẽ bị chặn để không mở thêm.
       </div>
     `;
     back.appendChild(panel);
@@ -413,50 +436,25 @@
     const h = (a.getAttribute('href') || '').trim().toLowerCase();
     return h && !(h.startsWith('#') || h.startsWith('javascript:') || h.startsWith('mailto:') || h.startsWith('tel:'));
   }
-  function inEditable(el) {
-    return !!(el && el.closest && el.closest('input,textarea,select,button,[contenteditable],[contenteditable="true"]'));
-  }
-  function hasSelection() {
-    const s = window.getSelection && window.getSelection();
-    return !!(s && s.type === 'Range' && String(s).length > 0);
-  }
-  function openByMode(url, mode) {
+  function inEditable(el) { return !!(el && el.closest && el.closest('input,textarea,select,button,[contenteditable],[contenteditable="true"]')); }
+  function hasSelection() { const s = window.getSelection && window.getSelection(); return !!(s && s.type === 'Range' && String(s).length > 0); }
+  function openByMode(url, mode, key='vmug-open') {
+    if (!G.canOpen(key+':'+url)) return;
     const active = (mode === 'fg');
-    try {
-      GM_openInTab(url, { active, insert: true, setParent: true });
-    } catch (e) {
-      const w = window.open(url, '_blank', 'noopener');
-      if (w && !active) { try { w.blur(); window.focus(); } catch (_) {} }
-    }
+    try { GM_openInTab(url, { active, insert: true, setParent: true }); }
+    catch { const w = window.open(url, '_blank', 'noopener'); if (w && !active) { try { w.blur(); window.focus(); } catch {} } }
+    G.suppress(900);
   }
   function closeTabSafe() {
-    try { window.close(); } catch (_) {}
-    try { window.open('', '_self'); window.close(); } catch (_) {}
-    try { if (history.length > 1) history.back(); } catch (_) {}
+    try { window.close(); } catch {}
+    try { window.open('', '_self'); window.close(); } catch {}
+    try { if (history.length > 1) history.back(); } catch {}
   }
-
-  // Ăn click sau long-press
-  let suppressUntil = 0;
-  let suppressAnchor = null;
-  function eatNextClickFor(anchor, ms = 800) {
-    suppressAnchor = anchor;
-    suppressUntil = Date.now() + ms;
-  }
-  addEventListener('click', (ev) => {
-    if (Date.now() <= suppressUntil) {
-      const a = getAnchorFromEvent(ev);
-      if (a && suppressAnchor && a === suppressAnchor) {
-        ev.preventDefault(); ev.stopImmediatePropagation(); ev.stopPropagation();
-        suppressUntil = 0; suppressAnchor = null;
-        return;
-      }
-    }
-  }, true);
 
   // ===== Gestures =====
 
-  // Long-press mở link (bỏ qua khi có selection để nhường Hold-to-Search)
-  let lpDownX = 0, lpDownY = 0, lpAnchor = null, lpMoved = false, lpTimer = null;
+  // Long-press → open new tab, block synthetic click on release
+  let lpDownX=0, lpDownY=0, lpAnchor=null, lpMoved=false, lpTimer=null, lpFired=false;
 
   addEventListener('pointerdown', (ev) => {
     if (!CFG.lpress.enabled) return;
@@ -465,39 +463,38 @@
     if (!validLink(a)) return;
 
     lpDownX = ev.clientX; lpDownY = ev.clientY;
-    lpAnchor = a; lpMoved = false;
+    lpAnchor = a; lpMoved = false; lpFired = false;
 
     clearTimeout(lpTimer);
     lpTimer = setTimeout(() => {
       if (!lpAnchor || lpMoved) return;
-      openByMode(lpAnchor.href, getPath('lpress.mode'));
-      eatNextClickFor(lpAnchor, 800);
-      const eatOnce = (e) => { e.preventDefault(); e.stopImmediatePropagation(); e.stopPropagation(); removeEventListener('contextmenu', eatOnce, true); };
-      addEventListener('contextmenu', eatOnce, true);
+      lpFired = true;
+      openByMode(lpAnchor.href, getPath('lpress.mode'), 'vmug-lp');
     }, CFG.longMs);
   }, true);
 
   addEventListener('pointermove', (ev) => {
     if (!lpAnchor) return;
-    const dx = Math.abs(ev.clientX - lpDownX);
-    const dy = Math.abs(ev.clientY - lpDownY);
-    if (dx > CFG.tapTol || dy > CFG.tapTol) {
-      lpMoved = true;
-      clearTimeout(lpTimer); lpTimer = null;
-    }
+    const dx=Math.abs(ev.clientX-lpDownX), dy=Math.abs(ev.clientY-lpDownY);
+    if (dx > CFG.tapTol || dy > CFG.tapTol) { lpMoved = true; clearTimeout(lpTimer); lpTimer=null; }
   }, true);
 
-  function endLP() {
-    clearTimeout(lpTimer); lpTimer = null; lpAnchor = null;
+  function endLP(ev){
+    if (lpTimer){ clearTimeout(lpTimer); lpTimer=null; }
+    if (lpFired){ ev.preventDefault?.(); ev.stopImmediatePropagation?.(); ev.stopPropagation?.(); }
+    lpAnchor=null; lpFired=false;
   }
-  addEventListener('pointerup', endLP, true);
-  addEventListener('pointercancel', endLP, true);
+  addEventListener('pointerup', endLP, {capture:true, passive:false});
+  addEventListener('pointercancel', endLP, {capture:true, passive:false});
 
   // Double-tap / Double-click
   let lastTapT = 0, lastTapX = 0, lastTapY = 0, singleTimer = null, pendingUrl = null;
 
   addEventListener('click', (ev) => {
     if (!CFG.dbl.enabled) return;
+
+    // Bị khóa bởi guard toàn cục → nuốt và thoát
+    if (Date.now() <= G.killUntil) { ev.preventDefault(); ev.stopImmediatePropagation(); ev.stopPropagation(); return; }
 
     const now = Date.now();
     const x = ev.clientX, y = ev.clientY;
@@ -509,8 +506,7 @@
       if (inEditable(ev.target)) return;
       if (closeTime && closeSpace) {
         ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
-        lastTapT = 0;
-        closeTabSafe();
+        lastTapT = 0; closeTabSafe();
         return;
       }
       lastTapT = now; lastTapX = x; lastTapY = y;
@@ -528,26 +524,27 @@
     const url = a.href;
     if (closeTime && closeSpace) {
       if (singleTimer) { clearTimeout(singleTimer); singleTimer = null; pendingUrl = null; }
-      lastTapT = 0;
-      openByMode(url, getPath('dbl.mode'));
+      lastTapT = 0; openByMode(url, getPath('dbl.mode'), 'vmug-dbl');
       return;
     }
 
     lastTapT = now; lastTapX = x; lastTapY = y; pendingUrl = url;
     if (singleTimer) clearTimeout(singleTimer);
     singleTimer = setTimeout(() => {
+      if (Date.now() <= G.killUntil) { pendingUrl=null; singleTimer=null; lastTapT=0; return; }
       if (pendingUrl) window.location.assign(pendingUrl);
-      pendingUrl = null; singleTimer = null; lastTapT = 0;
+      pendingUrl=null; singleTimer=null; lastTapT=0;
     }, CFG.dblMs);
   }, true);
 
   // Right-click → mở tab mới
   addEventListener('contextmenu', (ev) => {
     if (!CFG.rclick.enabled) return;
+    if (Date.now() <= G.killUntil) { ev.preventDefault(); ev.stopImmediatePropagation(); ev.stopPropagation(); return; }
     const a = getAnchorFromEvent(ev);
     if (!validLink(a)) return;
     ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
-    openByMode(a.href, getPath('rclick.mode'));
+    openByMode(a.href, getPath('rclick.mode'), 'vmug-rc');
   }, true);
 
 })();
