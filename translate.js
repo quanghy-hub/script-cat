@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         translate
 // @namespace    vn.inline.translate.ctrl.swipe
-// @version      1.7.0
-// @description  Ctrl (desktop) hoặc Vuốt ngang (mobile) để chèn bản dịch ngay dưới đoạn/câu. Tự động: nếu nguồn KHÔNG phải tiếng Việt → dịch sang VI; nếu nguồn là tiếng Việt → dịch sang EN. Nhấn lại để hoàn tác. Cấu hình dùng chung mọi trang. Không có “giữ lâu”.
+// @version      1.7.1
+// @description  Shift/Alt (desktop) hoặc Vuốt ngang (mobile) để chèn bản dịch dưới đoạn. Tự động VI↔EN. Nhấn lại để hoàn tác. Không có “bôi đen để dịch”.
 // @author       you
-// @updateURL   https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/translate.js
-// @downloadURL https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/translate.js
+// @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/translate.js
+// @downloadURL  https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/translate.js
 // @match        http://*/*
 // @match        https://*/*
 // @grant        GM_registerMenuCommand
@@ -28,6 +28,8 @@
     provider: 'google',          // 'google' | 'gemini'
     geminiKey: '',
     geminiModel: 'gemini-1.5-flash',
+    // Hotkey desktop
+    hotkey: 'shift',             // 'shift' | 'alt'
     // Swipe (VideoHelper-style)
     swipeEnabled: true,
     swipePx: 60,
@@ -35,17 +37,16 @@
     swipeDir: 'both',
     swipeVHMode: true,
     scrubThrottleMs: 80,
-    // Chọn để dịch
-    selectEnabled: false,
     // Hiển thị
     fontScale: 0.95,
     italic: true,
-    mutedColor: '#666',
+    mutedColor: '#00bfff',
     bgBlend: 'transparent',
     // Khác
     maxChars: 2000,
-    dedupeSeconds: 0.7,          // chỉ chống double-insert, không cản hoàn tác
-    showPanelOnStart: false
+    dedupeSeconds: 0.7,
+    showPanelOnStart: false,
+    shortJoinMaxChars: 50      // câu ngắn chưa xuống dòng → coi như 1 đoạn
   };
   const cfg = loadCfg();
   function loadCfg(){ try{ const s=GM_getValue(GLOBAL_KEY); return s?{...defaults,...JSON.parse(s)}:{...defaults}; }catch{ return {...defaults}; } }
@@ -55,14 +56,14 @@
   const style = document.createElement('style');
   style.textContent = `
   :root{ --ilt-fs:${cfg.fontScale}em; --ilt-it:${cfg.italic?'italic':'normal'}; --ilt-fg:${cfg.mutedColor}; --ilt-bg:${cfg.bgBlend||'transparent'} }
-  .ilt-panel{position:fixed;z-index:2147483646;top:16px;right:16px;background:#111a;border:1px solid #444;border-radius:12px;padding:12px 14px;color:#eee;font:14px/1.4 system-ui,Segoe UI,Roboto,Arial;max-width:360px;touch-action:manipulation}
+  .ilt-panel{position:fixed;z-index:2147483646;top:16px;right:16px;background:#111a;border:1px solid #444;border-radius:12px;padding:12px 14px;color:#eee;font:14px/1.4 system-ui,Segoe UI,Roboto,Arial;max-width:380px;touch-action:manipulation}
   .ilt-panel h3{margin:0 0 8px;font-size:14px;font-weight:600}
   .ilt-row{display:flex;align-items:center;gap:8px;margin:6px 0}
   .ilt-row label{min-width:150px;color:#ccc}
-  .ilt-panel input[type="text"], .ilt-panel input[type="number"], .ilt-panel select{width:160px;padding:4px 6px;background:#222;border:1px solid #444;border-radius:8px;color:#eee}
+  .ilt-panel input[type="text"], .ilt-panel input[type="number"], .ilt-panel select{width:180px;padding:4px 6px;background:#222;border:1px solid #444;border-radius:8px;color:#eee}
   .ilt-panel input[type="checkbox"]{transform:scale(1.1)}
   .ilt-panel button{padding:6px 10px;border:1px solid #555;background:#1e1e1e;color:#eee;border-radius:8px;cursor:pointer}
-  .ilt-trans{margin-top:6px;padding:6px 8px;border-left:3px solid #999;border-radius:4px;background:var(--ilt-bg,transparent);color:var(--ilt-fg,#666);font-style:var(--ilt-it,italic);font-size:var(--ilt-fs,0.95em)}
+  .ilt-trans{margin-top:6px;padding:6px 8px;border-left:3px solid #999;border-radius:4px;background:var(--ilt-bg,transparent);color:var(--ilt-fg,#00bfff);font-style:var(--ilt-it,italic);font-size:var(--ilt-fs,0.95em)}
   .ilt-trans[data-state="loading"]{opacity:0.7}
   .ilt-trans .ilt-meta{font-size:11px;opacity:0.75;margin-bottom:2px}
   `;
@@ -79,19 +80,34 @@
 
       <div class="ilt-row"><label>Chế độ dịch</label>
         <select id="ilt-mode">
-          <option value="sentence" ${cfg.mode==='sentence'?'selected':''}>Dòng/Câu</option>
+          <option value="sentence" ${cfg.mode==='sentence'?'selected':''}>Dòng/Câu thông minh</option>
           <option value="paragraph" ${cfg.mode==='paragraph'?'selected':''}>Đoạn</option>
+        </select>
+      </div>
+
+      <div class="ilt-row"><label>Phím kích hoạt</label>
+        <select id="ilt-hotkey">
+          <option value="shift" ${cfg.hotkey==='shift'?'selected':''}>Shift</option>
+          <option value="alt" ${cfg.hotkey==='alt'?'selected':''}>Alt</option>
         </select>
       </div>
 
       <div class="ilt-row"><label>Nhà cung cấp</label>
         <select id="ilt-provider">
           <option value="google" ${cfg.provider==='google'?'selected':''}>Google (miễn phí)</option>
-          <option value="gemini" ${cfg.provider==='gemini'?'selected':''}>Gemini (API)</option>
+          <option value="gemini" ${cfg.provider==='gemini'?'selected':''}>Gemini (API, chọn model)</option>
         </select>
       </div>
+
       <div class="ilt-row"><label>Gemini API Key</label><input id="ilt-gkey" type="text" placeholder="AIza..." value="${cfg.geminiKey}"></div>
-      <div class="ilt-row"><label>Gemini Model</label><input id="ilt-gmodel" type="text" value="${cfg.geminiModel}"></div>
+      <div class="ilt-row"><label>Gemini Model</label>
+        <input id="ilt-gmodel" list="ilt-gmodels" type="text" value="${cfg.geminiModel}">
+        <datalist id="ilt-gmodels">
+          <option value="gemini-1.5-flash"></option>
+          <option value="gemini-1.5-pro"></option>
+          <option value="gemini-1.5-flash-8b"></option>
+        </datalist>
+      </div>
 
       <div class="ilt-row"><label>Vuốt để dịch</label><input id="ilt-swipe" type="checkbox" ${cfg.swipeEnabled?'checked':''}><span>Kiểu VideoHelper</span></div>
       <div class="ilt-row"><label>Hướng vuốt</label>
@@ -104,8 +120,6 @@
       <div class="ilt-row"><label>Ngưỡng vuốt (px)</label><input id="ilt-swipePx" type="number" min="24" max="300" step="2" value="${cfg.swipePx}"></div>
       <div class="ilt-row"><label>Độ dốc tối đa |dy/dx|</label><input id="ilt-slope" type="number" min="0.1" max="1" step="0.05" value="${cfg.swipeSlopeMax}"></div>
       <div class="ilt-row"><label>Throttle (ms)</label><input id="ilt-throttle" type="number" min="0" max="500" step="5" value="${cfg.scrubThrottleMs}"></div>
-
-      <div class="ilt-row"><label>Dịch khi bôi đen</label><input id="ilt-select" type="checkbox" ${cfg.selectEnabled?'checked':''}></div>
 
       <div class="ilt-row"><label>Font tỉ lệ</label><input id="ilt-fs" type="number" min="0.6" max="1.2" step="0.01" value="${cfg.fontScale}"></div>
       <div class="ilt-row"><label>Chữ nghiêng</label><input id="ilt-it" type="checkbox" ${cfg.italic?'checked':''}></div>
@@ -121,6 +135,7 @@
     const $ = (id)=>panel.querySelector(id);
     $('#ilt-save').onclick = () => {
       cfg.mode = $('#ilt-mode').value;
+      cfg.hotkey = $('#ilt-hotkey').value;
       cfg.provider = $('#ilt-provider').value;
       cfg.geminiKey = $('#ilt-gkey').value.trim();
       cfg.geminiModel = $('#ilt-gmodel').value.trim() || 'gemini-1.5-flash';
@@ -130,8 +145,6 @@
       cfg.swipePx = clamp(+$('#ilt-swipePx').value, 24, 300, cfg.swipePx);
       cfg.swipeSlopeMax = clamp(+$('#ilt-slope').value, 0.1, 1, cfg.swipeSlopeMax);
       cfg.scrubThrottleMs = clamp(+$('#ilt-throttle').value, 0, 500, cfg.scrubThrottleMs);
-
-      cfg.selectEnabled = $('#ilt-select').checked;
 
       cfg.fontScale = clamp(+$('#ilt-fs').value, 0.6, 1.2, cfg.fontScale);
       cfg.italic = $('#ilt-it').checked;
@@ -187,6 +200,33 @@
       if (/(block|list-item|table|grid|flex)/.test(d)) return el; el=el.parentElement; }
     return document.body;
   }
+
+  function getSmartLineOrParagraph(range, container){
+    // Lấy dòng quanh caret; nếu dòng quá ngắn → dùng cả đoạn
+    try{
+      const before = document.createRange();
+      before.setStart(container, 0);
+      before.setEnd(range.startContainer, range.startOffset);
+      const left = before.toString();
+
+      const after = document.createRange();
+      after.setStart(range.startContainer, range.startOffset);
+      after.setEnd(container, container.childNodes.length);
+      const right = after.toString();
+
+      const lnl = left.lastIndexOf('\n'); const lnr = right.indexOf('\n');
+      const leftTail = left.slice(lnl+1);
+      const rightHead = lnr>=0 ? right.slice(0, lnr) : right;
+      const line = (leftTail + rightHead).trim();
+
+      if (line.length <= cfg.shortJoinMaxChars && line.length>0) {
+        return line;
+      }
+    }catch{}
+    const raw = (container?.innerText || container?.textContent || '').trim();
+    return raw;
+  }
+
   function getTextAtPoint(x,y){
     const range = caretRangeFromPointSafe(x,y);
     if(!range || !range.startContainer) return null;
@@ -198,23 +238,11 @@
       if(!raw) return null;
       return { text: raw.slice(0,cfg.maxChars), container };
     } else {
-      const text = node.data || ''; const idx = range.startOffset ?? 0;
-      const left = text.slice(0, idx), right = text.slice(idx);
-      const leftSplit = left.split(/(?<=[\.!?…])\s+/);
-      const rightSplit = right.split(/(?<=[\.!?…])\s+/);
-      const leftPart = leftSplit.length ? leftSplit[leftSplit.length - 1] : left;
-      const rightPart = rightSplit.length ? rightSplit[0] : right;
-      const sentence = (leftPart + rightPart).trim().slice(0,cfg.maxChars);
-      if(!sentence) return null;
-      return { text: sentence, container };
+      // sentence/line thông minh
+      const picked = getSmartLineOrParagraph(range, container);
+      if(!picked) return null;
+      return { text: picked.slice(0,cfg.maxChars), container };
     }
-  }
-  function getSelectionHit(){
-    const sel = window.getSelection();
-    if(!sel || sel.isCollapsed) return null;
-    const txt = sel.toString().trim(); if(!txt) return null;
-    const node = sel.anchorNode || sel.focusNode;
-    return { text: txt.slice(0,cfg.maxChars), container: closestBlock(node) };
   }
 
   // ========= Language helpers =========
@@ -227,8 +255,8 @@
   }
 
   // ========= Translate (auto VI↔EN) =========
-  const recent = new Map(); // text -> ts
-  function tooSoon(text){ // chỉ ngăn double-insert, KHÔNG ngăn hoàn tác
+  const recent = new Map();
+  function tooSoon(text){
     const now=performance.now()/1000, t=recent.get(text);
     if(t && now-t<cfg.dedupeSeconds) return true;
     recent.set(text, now); return false;
@@ -246,13 +274,12 @@
         const en = await translateGoogle(text, 'en');
         return {translated: en.translated, src: 'vi'};
       } else {
-        return det; // đã là VI
+        return det;
       }
     }
   }
 
   function parseGoogleBody(body){
-    // body có thể là object, array, hoặc string có XSSI ")]}'"
     if (typeof body === 'string'){
       let s = body.trim();
       if (s.startsWith(")]}'")) s = s.replace(/^\)\]\}'\s*\n?/, '');
@@ -276,13 +303,11 @@
             try{
               const raw = res.response ?? res.responseText ?? '';
               const data = parseGoogleBody(raw);
-              // dạng mảng (gtx)
               if (Array.isArray(data)){
                 const out = (data[0]||[]).map(a=>a && a[0] || '').join('');
                 const src = (data[2] && data[2]) || 'auto';
                 resolve({translated: out, src}); return;
               }
-              // dạng object (clients5)
               if (data && data.sentences){
                 const out = (data.sentences||[]).map(s=>s.trans || s.translit || '').join('');
                 const src = data.src || 'auto';
@@ -332,9 +357,9 @@ ${text}` }]}],
   // ========= Toggle insert/remove =========
   function toggleTranslate(container, original){
     const existed = container.querySelector(':scope > .ilt-trans');
-    if (existed){ existed.remove(); return; }     // hoàn tác
-    if (tooSoon(original)) return;                // chặn double-insert do một thao tác phát nhiều sự kiện
-    insertTranslation(container, original);       // chèn
+    if (existed){ existed.remove(); return; }
+    if (tooSoon(original)) return;
+    insertTranslation(container, original);
   }
 
   function insertTranslation(container, original){
@@ -349,20 +374,21 @@ ${text}` }]}],
     }).catch(err=>{
       div.dataset.state='error';
       div.innerHTML = `<div class="ilt-meta">Lỗi: ${escapeHTML(String(err?.message||err))}</div>`;
-      // giữ lại 2s để đọc lỗi rồi tự xóa cho sạch
       setTimeout(()=>{ try{div.remove();}catch{} }, 2000);
     });
   }
   function escapeHTML(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
   // ========= Triggers =========
-  // Desktop: Ctrl tại điểm trỏ
+  // Desktop: Shift/Alt tại điểm trỏ
   document.addEventListener('keydown', e=>{
-    if(e.key!=='Control') return;
+    const needKey = cfg.hotkey==='shift' ? 'Shift' : 'Alt';
+    if(e.key!==needKey) return;
     const a = document.activeElement;
     if (a && (a.isContentEditable || /^(input|textarea|select)$/i.test(a.tagName))) return;
     const hit = getTextAtPoint(lastMouse.x,lastMouse.y);
     if(!hit) return;
+    // Với mode sentence: câu ngắn sẽ nâng lên thành đoạn theo getSmartLineOrParagraph
     toggleTranslate(hit.container, hit.text);
   }, true);
 
@@ -413,19 +439,6 @@ ${text}` }]}],
   document.addEventListener('touchmove',  touchMove,  {capture:true, passive:false});
   document.addEventListener('touchend',   touchEnd,   {capture:true, passive:false});
   document.addEventListener('touchcancel',()=>{ document.documentElement.style.touchAction=''; swiping=false; }, {capture:true});
-
-  // Chọn để dịch
-  function handlePossibleSelection(){
-    if(!cfg.selectEnabled) return;
-    const a = document.activeElement;
-    if (a && (a.isContentEditable || /^(input|textarea|select)$/i.test(a.tagName))) return;
-    const hit = getSelectionHit();
-    if(!hit) return;
-    toggleTranslate(hit.container, hit.text);
-    try{ const sel = window.getSelection(); sel.removeAllRanges(); }catch{}
-  }
-  document.addEventListener('mouseup', () => setTimeout(handlePossibleSelection, 0), true);
-  document.addEventListener('keyup',  () => setTimeout(handlePossibleSelection, 0), true);
 
   // ========= Misc =========
   document.addEventListener('keydown', e=>{
