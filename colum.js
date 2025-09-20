@@ -1,11 +1,11 @@
-// ==UserScript==
-// @name      2Column
+// ==UserScript== 
+// @name         Two-Column Virtual View — Smooth Drag + Instant Swap (Chromium-optimized, scroll-guard)
 // @namespace    twocol.virtual.viewport
-// @version      1.0.0
-// @description  2 khung (Trái=Top, Phải=Bottom). Icon+panel. Kéo gap mượt (PointerEvents+rAF). Hoán đổi tức thì. Chặn SPA tự điều hướng, anti-blank nhanh. Bật/tắt tức thì không tải lại. Guard chống thanh cuộn nhảy.
+// @version      1.1.1
+// @description  2 khung (Trái=Top, Phải=Bottom). Icon+panel. Kéo gap mượt (PointerEvents+rAF). Hoán đổi tức thì. Chặn SPA tự điều hướng, anti-blank tinh chỉnh cho Android. Bật/tắt tức thì không tải lại. Guard chống thanh cuộn nhảy.
 // @match        *://*/*
-// @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/colum.js
-// @downloadURL  https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/colum.js
+// @updateURL   https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/colum.js
+// @downloadURL https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/colum.js
 // @exclude      *://mail.google.com/*
 // @run-at       document-start
 // @grant        GM_registerMenuCommand
@@ -14,6 +14,7 @@
 // @grant        GM_setValue
 // @license      MIT
 // ==/UserScript==
+
 (() => {
   'use strict';
   if (window.__TWC_RUNNING__) return; window.__TWC_RUNNING__ = true;
@@ -21,6 +22,11 @@
   const P_KEY='__twocol_iframe', V_KEY='__twocol_view';
   const SHELL_ID='twc-shell', ICON_ID='twc-fab', POP_ID='twc-pop', BD_ID='twc-backdrop';
   const HOST_KEY='twc.site.'+location.host;
+
+  /* ===== Env detect ===== */
+  const IS_TOUCH = (typeof matchMedia==='function' && matchMedia('(pointer:coarse)').matches)
+    || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'');
+  const FALLBACK_MS = IS_TOUCH ? 1800 : 900; // tránh mở tab mới sai trên Android
 
   /* ===== Storage ===== */
   const S = (() => {
@@ -31,19 +37,20 @@
     };
   })();
 
-  const defaults = { icon:true, overlay:false, route:true, swap:false, gap:10, split:0.5 };
+  // Đổi mặc định: icon=false, gap=0
+  const defaults = { icon:false, overlay:false, route:true, swap:false, gap:0, split:0.5 };
   let cfg = Object.assign({}, defaults, S.get(HOST_KEY, {}));
   const save = (patch)=>{ cfg=Object.assign({}, cfg, patch); S.set(HOST_KEY, cfg); syncUI(); };
 
-  /* ===== Mirror branch (bên trong iframe) — có scroll guard ===== */
+  /* ===== Mirror branch (bên trong iframe) — scroll guard ===== */
   const url = new URL(location.href);
   if (url.searchParams.get(P_KEY)==='1') {
     const view = url.searchParams.get(V_KEY) || 'top';
     const anchorRatio = view==='bottom' ? 0.5 : 0.0;
 
-    const EPS = 32;        // sai số vị trí cho phép
-    const QUIET_MS = 1200; // thời gian yên lặng sau khi user cuộn
-    const H_DELTA = 48;    // đổi chiều cao đủ lớn mới resync
+    const EPS = 32;
+    const QUIET_MS = 1200;
+    const H_DELTA = 48;
 
     let lastUserScroll = 0;
     let lastDocH = 0;
@@ -75,10 +82,7 @@
       scrollTo(0, t);
     };
 
-    const resync = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => { raf = 0; resyncCore(); });
-    };
+    const resync = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; resyncCore(); }); };
 
     addEventListener('scroll', () => { lastUserScroll = Date.now(); }, {passive:true});
 
@@ -138,12 +142,17 @@
 #${SHELL_ID}.hidden{display:none}
 #${SHELL_ID}.inert{opacity:0;pointer-events:none}
 #${SHELL_ID} .wrap{position:absolute;inset:0;display:flex;will-change:width}
-#${SHELL_ID} iframe{height:100%;border:0;background:transparent!important;border-radius:10px;overflow:hidden;display:block;transition:none;contain:paint;opacity:1}
+#${SHELL_ID} iframe{height:100%;border:0;background:transparent!important;overflow:hidden;display:block;transition:none;contain:paint;opacity:1;border-radius:10px}
 #${SHELL_ID}.dragging iframe{pointer-events:none}
-#${SHELL_ID} .left{width:calc(var(--left) - (var(--gap)/2))}
-#${SHELL_ID} .right{width:calc(100% - var(--left) - (var(--gap)/2));margin-left:var(--gap)}
-#${SHELL_ID} .resizer{position:absolute;top:0;bottom:0;left:var(--left);width:var(--gap);margin-left:calc(var(--gap)*-0.5);cursor:col-resize;touch-action:none;background:transparent}
+
+/* Loại khe giữa 2 khung; chồng nhẹ 0.5px chống hairline */
+#${SHELL_ID} .left{width:calc(var(--left) - (var(--gap)/2));margin-right:-0.5px}
+#${SHELL_ID} .right{width:calc(100% - var(--left) - (var(--gap)/2));margin-left:calc(var(--gap) - 0.5px)}
+
+/* Tay nắm kéo luôn có vùng chạm đủ lớn trên mobile/gập */
+#${SHELL_ID} .resizer{position:absolute;top:0;bottom:0;left:var(--left);width:max(var(--gap),1px);margin-left:calc(var(--gap)*-0.5);cursor:col-resize;touch-action:none;background:transparent}
 #${SHELL_ID} .resizer::after{content:"";position:absolute;top:0;bottom:0;left:50%;transform:translateX(-50%);width:12px}
+@media (pointer:coarse){ #${SHELL_ID} .resizer::after{width:28px} }
 
 #twc-fallback{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.03)}
 #twc-fallback .inner{position:absolute;inset:0;overflow:auto;padding:12px}
@@ -191,7 +200,7 @@
       qs('#twc-ov').checked=!!cfg.overlay;
       qs('#twc-rt').checked=!!cfg.route;
       qs('#twc-sw').checked=!!cfg.swap;
-      qs('#twc-ic').checked=!!cfg.icon;
+      qs('#twc-ic').checked=!!cfg.icon; // mặc định bỏ tick vì defaults.icon=false
     }
   }
 
@@ -208,7 +217,7 @@
     if (cfg.overlay) showOverlay(); else hideOverlay();
   }
 
-  /* ===== Overlay (giữ sống để bật/tắt tức thì) ===== */
+  /* ===== Overlay ===== */
   let L=null, R=null, built=false;
 
   async function ensureOverlayBuilt(){
@@ -219,10 +228,10 @@
     sh.innerHTML=`
       <div class="wrap">
         <iframe class="left"  loading="eager" importance="high"
-          sandbox="allow-same-origin allow-scripts allow-forms allow-pointer-lock allow-modals allow-popups allow-popups-to-escape-sandbox"
+          sandbox="allow-same-origin allow-scripts allow-forms allow-pointer-lock allow-modals"
           referrerpolicy="no-referrer-when-downgrade" allow="autoplay;clipboard-read;clipboard-write"></iframe>
         <iframe class="right" loading="eager" importance="high"
-          sandbox="allow-same-origin allow-scripts allow-forms allow-pointer-lock allow-modals allow-popups allow-popups-to-escape-sandbox"
+          sandbox="allow-same-origin allow-scripts allow-forms allow-pointer-lock allow-modals"
           referrerpolicy="no-referrer-when-downgrade" allow="autoplay;clipboard-read;clipboard-write"></iframe>
         <div class="resizer" title="Kéo để đổi tỉ lệ"></div>
       </div>`;
@@ -286,19 +295,20 @@
     try{ R.contentWindow?.postMessage({__twc:'resync'}, '*'); }catch(_){}
   }
 
-  /* ===== Routing + Anti-blank nhanh ===== */
+  /* ===== Routing + Anti-blank tinh chỉnh ===== */
   function navigateInFrame(ifr, href){
     try{ ifr.__navToken = (Math.random()+''+Date.now()); ifr.src = href; }catch(_){ window.open(href, '_blank'); return; }
     const myToken = ifr.__navToken;
-    const timer = setTimeout(()=>{ // nghi ngờ bị chặn
+    const timer = setTimeout(()=>{ // fallback nếu thật sự bị chặn
       if (ifr.__navToken !== myToken) return;
       let blocked=true;
       try{
         const doc=ifr.contentDocument;
-        if (doc && doc.body && doc.body.childElementCount>0) blocked=false;
+        blocked = !(doc && doc.body && doc.body.childElementCount>0);
       }catch(_){ blocked=false; } // cross-origin: không coi là chặn
-      if (blocked){ try{ window.open(href, '_blank'); }catch(_){ } }
-    }, 900);
+      // Trên thiết bị cảm ứng: không bật tab mới để tránh mở nhầm
+      if (blocked && !IS_TOUCH){ try{ window.open(href, '_blank'); }catch(_){ } }
+    }, FALLBACK_MS);
     ifr.addEventListener('load', ()=>clearTimeout(timer), { once:true });
   }
 
@@ -321,6 +331,8 @@
         if (e.button!==0 || e.metaKey || e.ctrlKey || e.shiftKey || a.target==='_blank') return;
         e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
       };
+      // Bắt cả pointerdown để ổn định trên Android
+      doc.addEventListener('pointerdown', hardBlock, {capture:true});
       doc.addEventListener('mousedown', hardBlock, {capture:true});
 
       const handler=(e)=>{
@@ -354,7 +366,7 @@
     w.querySelector('.x').onclick=()=>{ while (host.firstChild) document.body.appendChild(host.firstChild); w.remove(); lockScroll(false); save({overlay:false}); };
   }
 
-  /* ===== Smooth drag tối ưu ===== */
+  /* ===== Smooth drag ===== */
   function bindSmoothDrag(shell, handle, onMoveRatio, onEnd){
     if (!handle) return;
     let dragging=false, rafId=0, lastClientX=null, activePointerId=null;
