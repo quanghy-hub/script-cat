@@ -1,7 +1,8 @@
 // ==UserScript==
-// @name         Gestures
+// @name         Gestures (Open/Close Tab, mobile-safe)
 // @namespace    https://github.com/yourname/vm-unified-gestures-open-tab
-// @version      1.1.0
+// @version      1.2.0
+// @description  Long-press mở link; right-click mở tab; double right-click đóng; double tap đóng tab với guard đa-ngón ≤100ms.
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
 // @run-at       document-start
@@ -33,7 +34,7 @@
     };
     addEventListener('click', eat, true);
     addEventListener('auxclick', eat, true);
-    addEventListener('contextmenu', eat, true); // chặn menu/phát sinh mở tab phụ sau long-press
+    addEventListener('contextmenu', eat, true);
   }
 })();
 
@@ -42,11 +43,13 @@
   'use strict';
   const G = window.__GESTURES_GUARD__;
 
-  const STORE_KEY = 'vmug_cfg_min_v116';
+  const STORE_KEY = 'vmug_cfg_min_v120';
   const DEFAULTS = {
-    lpress: { enabled: true,  mode: 'bg', longMs: 500, tapTol: 24 }, // long-press chỉ áp dụng chuột trái + touch
-    rclick: { enabled: true,  mode: 'bg' },                           // right-click mở tab mới
-    dblMs: 280
+    lpress: { enabled: true,  mode: 'bg', longMs: 500, tapTol: 24 }, // px
+    rclick: { enabled: true,  mode: 'bg' },
+    dblMs: 250,         // 90–120 Hz: 230–260 ms
+    mtWindowMs: 100,    // “đồng thời” đa ngón
+    mtGuardMs: 450      // khóa đóng sau khi nghi đa ngón
   };
 
   const deepClone = (o) => JSON.parse(JSON.stringify(o));
@@ -61,10 +64,8 @@
   const saveCfg = () => { try { GM_setValue(STORE_KEY, CFG); } catch {} };
   let CFG = loadCfg();
 
-  // dùng chung để chặn mở menu phải sau thao tác đặc biệt
   let blockNextContextmenuUntil = 0;
 
-  // Menu nhanh
   GM_registerMenuCommand?.(`⚙️ Long-press: ${CFG.lpress.enabled ? 'On' : 'Off'} • ${CFG.lpress.mode.toUpperCase()}`, () => {
     const on = confirm('Bật long-press mở link? OK=On, Cancel=Off');
     CFG.lpress.enabled = on;
@@ -116,14 +117,12 @@
     blockNextContextmenuUntil = Date.now() + 600;
   }
 
-  /* Long-press mở LINK – chỉ chuột trái hoặc touch */
+  /* ===== Long-press mở LINK – mouse left + touch ===== */
   let lpDownX=0, lpDownY=0, lpAnchor=null, lpMoved=false, lpTimer=null, lpFired=false;
 
   addEventListener('pointerdown', (ev) => {
     if (!CFG.lpress.enabled) return;
     if (inEditable(ev.target) || hasSelection()) return;
-
-    // Chỉ nhận long-press với chuột trái; vẫn nhận touch/pen
     if (ev.pointerType === 'mouse' && ev.button !== 0) return;
 
     const a = getAnchorFromEvent(ev);
@@ -137,9 +136,8 @@
       if (!lpAnchor || lpMoved) return;
       lpFired = true;
       openByMode(lpAnchor.href, CFG.lpress.mode);
-      // chặn mọi contextmenu/click phát sinh cho đến khi nhả
-      G.suppress(2_000);
-      blockNextContextmenuUntil = Date.now() + 2_000;
+      G.suppress(2000);
+      blockNextContextmenuUntil = Date.now() + 2000;
     }, CFG.lpress.longMs);
   }, true);
 
@@ -152,27 +150,25 @@
   function endLP(ev){
     if (lpTimer){ clearTimeout(lpTimer); lpTimer=null; }
     if (lpFired){
-      // Ngăn click/auxclick/contextmenu sau khi nhả, dù giữ lâu hơn thời gian guard trước đó
       ev.preventDefault?.(); ev.stopImmediatePropagation?.(); ev.stopPropagation?.();
-      G.suppress(1_200);
-      blockNextContextmenuUntil = Date.now() + 1_200;
+      G.suppress(1200);
+      blockNextContextmenuUntil = Date.now() + 1200;
     }
     lpAnchor=null; lpFired=false;
   }
   addEventListener('pointerup', endLP, {capture:true, passive:false});
   addEventListener('pointercancel', endLP, {capture:true, passive:false});
 
-  /* Chặn site bắt sự kiện mousedown chuột phải trên link gây điều hướng tab hiện tại */
+  /* ===== Chặn mousedown phải điều hướng tab hiện tại ===== */
   addEventListener('mousedown', (ev) => {
     if (ev.button !== 2) return;
     if (!CFG.rclick.enabled) return;
     const a = getAnchorFromEvent(ev);
     if (!validLink(a)) return;
-    // Ngăn lib của trang điều hướng theo mousedown
     ev.preventDefault(); ev.stopImmediatePropagation(); ev.stopPropagation();
   }, true);
 
-  /* Double RIGHT click → CLOSE TAB */
+  /* ===== Double RIGHT click → CLOSE TAB ===== */
   let lastRTime = 0, lastRX = 0, lastRY = 0;
   addEventListener('mousedown', (ev) => {
     if (ev.button !== 2) return;
@@ -191,7 +187,7 @@
     lastRTime = now; lastRX = ev.clientX; lastRY = ev.clientY;
   }, true);
 
-  /* Right-click (contextmenu) → OPEN NEW TAB */
+  /* ===== Right-click (contextmenu) → OPEN NEW TAB ===== */
   addEventListener('contextmenu', (ev) => {
     if (!CFG.rclick.enabled) return;
     if (Date.now() <= blockNextContextmenuUntil) {
@@ -199,28 +195,55 @@
       return;
     }
     const a = getAnchorFromEvent(ev);
-    if (!validLink(a)) return; // để menu mặc định
+    if (!validLink(a)) return;
     ev.preventDefault(); ev.stopImmediatePropagation(); ev.stopPropagation();
     openByMode(a.href, CFG.rclick.mode);
-    // chặn phát sinh thêm
     blockNextContextmenuUntil = Date.now() + 600;
   }, true);
 
-  /* Double TAP (touch) → CLOSE TAB */
+  /* ===== Double TAP (touch) → CLOSE TAB, guard đa-ngón ≤100 ms ===== */
   let lastTouchT = 0, lastTX = 0, lastTY = 0;
+  let mtLastFirstT = 0, mtLastFirstX = 0, mtLastFirstY = 0;
+  let multiTouchGuardUntil = 0;
+
   addEventListener('touchstart', (ev) => {
     if (inEditable(ev.target)) return;
-    const t = ev.touches?.[0]; if (!t) return;
+
     const now = Date.now();
-    const closeTime = (now - lastTouchT) <= CFG.dblMs + 70;
+    const t = ev.touches?.[0]; if (!t) return;
+
+    // Guard đa-ngón đang bật → không can thiệp
+    if (now <= multiTouchGuardUntil) return;
+
+    // Phát hiện đa-ngón tức thì
+    if (ev.touches.length >= 2) {
+      multiTouchGuardUntil = now + CFG.mtGuardMs;
+      return;
+    }
+
+    // Hai chạm gần đồng thời tại 2 điểm khác nhau → nghi đa-ngón
+    if ((now - mtLastFirstT) <= CFG.mtWindowMs) {
+      const d = Math.hypot(t.clientX - mtLastFirstX, t.clientY - mtLastFirstY);
+      if (d > CFG.lpress.tapTol) {
+        multiTouchGuardUntil = now + CFG.mtGuardMs;
+        return;
+      }
+    }
+
+    // Mốc cho lần kế tiếp
+    mtLastFirstT = now; mtLastFirstX = t.clientX; mtLastFirstY = t.clientY;
+
+    // Double-tap 1 ngón để đóng
+    const closeTimeOk = (now - lastTouchT) <= CFG.dblMs;
     const closeSpace = Math.hypot(t.clientX - lastTX, t.clientY - lastTY) <= CFG.lpress.tapTol;
 
-    if (closeTime && closeSpace) {
+    if (closeTimeOk && closeSpace && now > multiTouchGuardUntil) {
       ev.preventDefault(); ev.stopPropagation();
       lastTouchT = 0;
       closeTabSafe();
       return;
     }
+
     lastTouchT = now; lastTX = t.clientX; lastTY = t.clientY;
   }, { capture:true, passive:false });
 
