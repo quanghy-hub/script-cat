@@ -1,8 +1,8 @@
-// ==UserScript==
+// ==UserScript== 
 // @name         Quick Search
 // @namespace    qsb.search.bubble
-// @version      1.2.0
-// @description  Bôi đen là hiện bong bóng ngay dưới; ảnh: trỏ rồi nhấp chuột phải. 8 biểu tượng, chia 2 hàng. Preset 7 dịch vụ tìm kiếm/ảnh/dịch + Perplexity. Cài đặt đổi nhà cung cấp và ngôn ngữ dịch.
+// @version      1.3.0
+// @description  Bôi đen là hiện bong bóng; ảnh: trỏ rồi nhấp chuột phải. 10 icon: 8 nhà cung cấp + Copy + Cài đặt. Cài đặt đổi nhà cung cấp và ngôn ngữ dịch.
 // @match        *://*/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/serch.js
 // @downloadURL  https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/serch.js
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const STORE_KEY = 'qsb.providers.v3';
+  const STORE_KEY = 'qsb.providers.v4';
   const CFG_KEY   = 'qsb.cfg.v1';
   const OFFSET_Y  = 8;
 
@@ -37,7 +37,7 @@
     const { from, to } = getCfg();
     return [
       { name: 'Google',     url: 'https://www.google.com/search?q={{q}}',                           icon: 'https://www.google.com/favicon.ico' },
-      { name: 'YouTube',    url: 'https://www.youtube.com/results?search_query={{q}}',              icon: 'https://www.youtube.com/favicon.ico' }, // fixed
+      { name: 'YouTube',    url: 'https://www.youtube.com/results?search_query={{q}}',              icon: 'https://www.youtube.com/favicon.ico' },
       { name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q={{q}}',                                 icon: 'https://duckduckgo.com/favicon.ico' },
       { name: 'Bing',       url: 'https://www.bing.com/search?q={{q}}',                             icon: 'https://www.bing.com/favicon.ico' },
       { name: 'Ảnh Google', url: 'https://www.google.com/search?tbm=isch&q={{q}}',                  icon: 'https://www.google.com/favicon.ico' },
@@ -61,35 +61,44 @@
   const escHTML = (s='') => s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const rectToPageXY = (rect) => ({ x: rect.left + scrollX, y: rect.bottom + scrollY });
 
+  const copyText = async (txt) => {
+    try { await navigator.clipboard.writeText(txt); return true; }
+    catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = txt; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta);
+        ta.select(); document.execCommand('copy'); ta.remove(); return true;
+      } catch { return false; }
+    }
+  };
+
   GM_addStyle(`
     .qsb-bubble{
       position:absolute; z-index:2147483646; display:inline-block;
       background:#101114;color:#fff;border:1px solid #2a2d33;border-radius:12px;
       padding:8px 10px 10px 10px; box-shadow:0 8px 22px rgba(0,0,0,.28)
     }
-    .qsb-icons{ display:grid; grid-template-columns: repeat(4, 32px); grid-auto-rows:32px; gap:8px; }
-    .qsb-item{ width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid transparent }
+    .qsb-icons{ display:grid; grid-template-columns: repeat(5, 32px); grid-auto-rows:32px; gap:8px; }
+    .qsb-item{ width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid transparent; user-select:none }
     .qsb-item:hover{ background:#1b1e24;border-color:#2d3138 }
     .qsb-item img{ width:18px;height:18px; object-fit:contain }
-    .qsb-gear{ position:absolute; top:6px; right:6px; font:16px/1 system-ui; padding:2px 6px;
-      border:1px solid #2a2d33;border-radius:8px;cursor:pointer;background:#151923 }
-    .qsb-gear:hover{ background:#1b1e24 }
-
+    .qsb-item .glyph{ font:16px/1 system-ui }
     .qsb-config{position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:2147483647}
     .qsb-config.show{display:flex}
     .qsb-backdrop{position:absolute; inset:0; background:rgba(0,0,0,.45)}
-    .qsb-panel{position:relative; background:#0f1115; color:#e6e6e6; width:min(780px,96vw);
-      border:1px solid #2a2d33; border-radius:14px; padding:16px 18px; box-shadow:0 10px 30px rgba(0,0,0,.35)}
-    .qsb-panel h3{margin:0 0 12px; font:600 16px/1.4 system-ui}
-    .qsb-grid{display:grid; grid-template-columns: 1fr 2fr 2fr; gap:8px; align-items:center}
-    .qsb-grid input, .qsb-grid select{width:100%; padding:6px 8px; background:#12151b; border:1px solid #2a2d33; border-radius:8px; color:#e6e6e6}
+    .qsb-panel{position:relative; background:#0f1115; color:#e6e6e6; width:min(640px,92vw);
+      border:1px solid #2a2d33; border-radius:12px; padding:14px 16px; box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    .qsb-panel h3{margin:0 0 10px; font:600 15px/1.4 system-ui}
+    .qsb-grid{display:grid; grid-template-columns: 1fr 2fr 2fr; gap:6px; align-items:center}
+    .qsb-grid input, .qsb-grid select{width:100%; padding:5px 7px; background:#12151b; border:1px solid #2a2d33; border-radius:8px; color:#e6e6e6; font:13px/1.3 system-ui}
     .qsb-grid label{font:12px/1.4 system-ui; opacity:.85}
     .qsb-row{display:contents}
-    .qsb-actions{display:flex; gap:8px; justify-content:flex-end; margin-top:12px}
-    .qsb-btn{padding:8px 12px; border:1px solid #2a2d33; border-radius:10px; background:#151923; color:#e6e6e6; cursor:pointer}
+    .qsb-actions{display:flex; gap:8px; justify-content:flex-end; margin-top:10px}
+    .qsb-btn{padding:7px 10px; border:1px solid #2a2d33; border-radius:10px; background:#151923; color:#e6e6e6; cursor:pointer; font:13px/1 system-ui}
     .qsb-btn.primary{background:#1f6feb; border-color:#1f6feb; color:#fff}
     .qsb-hint{font:12px/1.4 system-ui; opacity:.8; margin:8px 0 0}
     .qsb-small{font:11px/1.4 system-ui; opacity:.7}
+    .qsb-toast{position:fixed; padding:6px 10px; background:#151923; color:#e6e6e6; border:1px solid #2a2d33; border-radius:8px; font:12px/1 system-ui; z-index:2147483647; opacity:.98}
   `);
 
   let bubble, iconGrid, lastCtx = null, selTimer = null;
@@ -104,17 +113,20 @@
     iconGrid.className = 'qsb-icons';
     bubble.appendChild(iconGrid);
 
-    const gear = document.createElement('div');
-    gear.className = 'qsb-gear';
-    gear.title = 'Cấu hình';
-    gear.textContent = '⚙︎';
-    gear.addEventListener('click', (e)=>{ e.stopPropagation(); openSettings(); });
-    bubble.appendChild(gear);
-
     document.body.appendChild(bubble);
     return bubble;
   }
   function hideBubble(){ if (bubble) bubble.style.display = 'none'; lastCtx = null; }
+
+  function toast(msg, x, y){
+    const el = document.createElement('div');
+    el.className = 'qsb-toast';
+    el.textContent = msg;
+    el.style.left = Math.min(x, scrollX + innerWidth - 160) + 'px';
+    el.style.top  = Math.max(6, y - 36) + 'px';
+    document.body.appendChild(el);
+    setTimeout(()=>el.remove(), 1200);
+  }
 
   function buildBubble(ctx){
     ensureBubble();
@@ -122,14 +134,35 @@
     const providers = getProviders();
     const { from, to } = getCfg();
 
+    // 1) Copy
+    const copyBtn = document.createElement('div');
+    copyBtn.className = 'qsb-item';
+    copyBtn.title = 'Copy';
+    copyBtn.innerHTML = `<span class="glyph">⧉</span>`;
+    copyBtn.addEventListener('click', async (e)=>{
+      e.preventDefault(); e.stopPropagation();
+      const txt = ctx.type==='text' ? String(ctx.text||'') : String(ctx.img||'');
+      if (!txt) return;
+      const ok = await copyText(txt);
+      hideBubble();
+      toast(ok ? 'Đã copy' : 'Copy lỗi', ctx.x, ctx.y);
+    });
+    iconGrid.appendChild(copyBtn);
+
+    // 2..9) Providers (8)
     providers.forEach((p)=>{
       const btn = document.createElement('div');
       btn.className = 'qsb-item';
       btn.title = p.name || '';
-      const img = document.createElement('img');
-      img.src = p.icon || '';
-      img.alt = p.name || '';
-      btn.appendChild(img);
+      if (p.icon) {
+        const img = document.createElement('img');
+        img.src = p.icon; img.alt = p.name || '';
+        btn.appendChild(img);
+      } else {
+        const sp = document.createElement('span');
+        sp.className = 'glyph'; sp.textContent = '🔗';
+        btn.appendChild(sp);
+      }
       btn.addEventListener('click', (e)=>{
         e.preventDefault(); e.stopPropagation();
         const q = ctx.type==='text'  ? escQ(ctx.text) : '';
@@ -144,6 +177,14 @@
       });
       iconGrid.appendChild(btn);
     });
+
+    // 10) Settings
+    const setBtn = document.createElement('div');
+    setBtn.className = 'qsb-item';
+    setBtn.title = 'Cài đặt';
+    setBtn.innerHTML = `<span class="glyph">⚙︎</span>`;
+    setBtn.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); openSettings(); });
+    iconGrid.appendChild(setBtn);
   }
 
   function placeAndShow(x,y){
@@ -199,7 +240,6 @@
   addEventListener('resize', hideBubble, {passive:true});
   document.addEventListener('keydown', (e)=>{ if (e.key==='Escape') hideBubble(); }, true);
 
-  // settings
   function openSettings(){
     const providers = getProviders();
     const cfg = getCfg();
@@ -212,7 +252,7 @@
         <h3>Cấu hình 8 ô + ngôn ngữ dịch</h3>
         <div class="qsb-grid" id="qsb-grid"></div>
 
-        <div class="qsb-grid" style="margin-top:10px; grid-template-columns: 1fr 1fr 1fr 1fr; align-items:center">
+        <div class="qsb-grid" style="margin-top:8px; grid-template-columns: 1fr 1fr 1fr 1fr; align-items:center">
           <label>Từ (from)</label>
           <select id="qsb-from">
             ${['auto','vi','en','ja','zh-CN','ko','fr','de','es'].map(c=>`<option value="${c}" ${cfg.from===c?'selected':''}>${c}</option>`).join('')}
