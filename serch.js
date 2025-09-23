@@ -1,8 +1,8 @@
 // ==UserScript== 
 // @name         Quick Search
 // @namespace    qsb.search.bubble
-// @version      1.3.0
-// @description  Bôi đen là hiện bong bóng; ảnh: trỏ rồi nhấp chuột phải. 10 icon: 8 nhà cung cấp + Copy + Cài đặt. Cài đặt đổi nhà cung cấp và ngôn ngữ dịch.
+// @version      1.4.0
+// @description  Bôi đen là hiện bong bóng; ảnh: giữ lâu hoặc nhấp chuột phải. 10 icon: 8 nhà cung cấp + Copy + Cài đặt + Tải ảnh.
 // @match        *://*/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/serch.js
 // @downloadURL  https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/serch.js
@@ -13,6 +13,7 @@
 // @grant        GM_setValue
 // @grant        GM_addStyle
 // @grant        GM_openInTab
+// @grant        GM_download
 // @license      MIT
 // ==/UserScript==
 
@@ -72,6 +73,31 @@
     }
   };
 
+  const filenameFromUrl = (u) => {
+    try {
+      const url = new URL(u, location.href);
+      const name = url.pathname.split('/').pop() || 'image';
+      const clean = name.split('?')[0].split('#')[0] || 'image';
+      return clean.match(/\.(png|jpe?g|webp|gif|bmp|svg|avif)$/i) ? clean : (clean + '.jpg');
+    } catch { return 'image.jpg'; }
+  };
+
+  const downloadImage = (src) => {
+    // Prefer GM_download to bypass CORS
+    if (typeof GM_download === 'function') {
+      try {
+        GM_download({ url: src, name: filenameFromUrl(src), saveAs: false, onerror: ()=>fallback(), ontimeout: ()=>fallback() });
+        return true;
+      } catch { /* fall through */ }
+    }
+    return fallback();
+    function fallback(){
+      // Fallback: open image in new tab, let user save manually
+      GM_openInTab(src, {active:true, insert:true, setParent:true});
+      return false;
+    }
+  };
+
   GM_addStyle(`
     .qsb-bubble{
       position:absolute; z-index:2147483646; display:inline-block;
@@ -122,7 +148,7 @@
     const el = document.createElement('div');
     el.className = 'qsb-toast';
     el.textContent = msg;
-    el.style.left = Math.min(x, scrollX + innerWidth - 160) + 'px';
+    el.style.left = Math.min(x, scrollX + innerWidth - 200) + 'px';
     el.style.top  = Math.max(6, y - 36) + 'px';
     document.body.appendChild(el);
     setTimeout(()=>el.remove(), 1200);
@@ -185,6 +211,21 @@
     setBtn.innerHTML = `<span class="glyph">⚙︎</span>`;
     setBtn.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); openSettings(); });
     iconGrid.appendChild(setBtn);
+
+/* --- New: Download icon appears when context is image --- */
+    if (ctx.type === 'image') {
+      const dlBtn = document.createElement('div');
+      dlBtn.className = 'qsb-item';
+      dlBtn.title = 'Tải ảnh';
+      dlBtn.innerHTML = `<span class="glyph">⬇</span>`;
+      dlBtn.addEventListener('click', (e)=>{
+        e.preventDefault(); e.stopPropagation();
+        const ok = downloadImage(ctx.img);
+        hideBubble();
+        toast(ok ? 'Đang tải / mở ảnh' : 'Mở ảnh để lưu', ctx.x, ctx.y);
+      });
+      iconGrid.appendChild(dlBtn);
+    }
   }
 
   function placeAndShow(x,y){
@@ -218,7 +259,7 @@
     selTimer = setTimeout(handleSelectionShow, 90);
   });
 
-  // image → right click
+  // image → context menu (sites đôi khi chặn, đã dùng capture)
   document.addEventListener('contextmenu', (ev)=>{
     const t = ev.target;
     if (!(t instanceof Element)) return;
@@ -233,6 +274,61 @@
     buildBubble(lastCtx);
     placeAndShow(lastCtx.x, lastCtx.y);
   }, {capture:true});
+
+  // NEW: long-press on image (pointer-based, mobile + desktop)
+  (function enableImageLongPress(){
+    let pressTimer = null, startX=0, startY=0, moved=false, targetImg=null;
+
+    const HOLD_MS = 450;
+    const MOVE_CANCEL_PX = 6;
+
+    const onDown = (ev) => {
+      const t = ev.target;
+      if (!(t instanceof Element)) return;
+      // find an <img> under pointer
+      let img = null;
+      if (t.tagName === 'IMG') img = t;
+      else img = t.closest?.('picture')?.querySelector('img') || null;
+      if (!img) return;
+
+      targetImg = img;
+      moved = false;
+      startX = (ev.touches?.[0]?.pageX) ?? ev.pageX;
+      startY = (ev.touches?.[0]?.pageY) ?? ev.pageY;
+
+      clearTimeout(pressTimer);
+      pressTimer = setTimeout(()=>{
+        if (!targetImg) return;
+        const src = targetImg.currentSrc || targetImg.src;
+        if (!src) return;
+        const x = startX + 6;
+        const y = startY + 6;
+        lastCtx = { type:'image', img: src, x, y };
+        buildBubble(lastCtx);
+        placeAndShow(x, y);
+      }, HOLD_MS);
+    };
+
+    const onMove = (ev) => {
+      if (!pressTimer) return;
+      const x = (ev.touches?.[0]?.pageX) ?? ev.pageX;
+      const y = (ev.touches?.[0]?.pageY) ?? ev.pageY;
+      if (Math.abs(x-startX) > MOVE_CANCEL_PX || Math.abs(y-startY) > MOVE_CANCEL_PX) {
+        moved = true;
+        clearTimeout(pressTimer); pressTimer = null; targetImg=null;
+      }
+    };
+
+    const onUpOrCancel = () => {
+      clearTimeout(pressTimer); pressTimer = null; targetImg=null;
+    };
+
+    document.addEventListener('pointerdown', onDown, {passive:true, capture:true});
+    document.addEventListener('pointermove', onMove, {passive:true, capture:true});
+    document.addEventListener('pointerup', onUpOrCancel, {passive:true, capture:true});
+    document.addEventListener('pointercancel', onUpOrCancel, {passive:true, capture:true});
+    document.addEventListener('scroll', onUpOrCancel, {passive:true, capture:true});
+  })();
 
   // dismiss
   document.addEventListener('mousedown', (e)=>{ if (bubble && !bubble.contains(e.target)) hideBubble(); }, true);
@@ -317,3 +413,4 @@
 
   GM_registerMenuCommand('⚙️ Cấu hình Quick Search Bubble', openSettings);
 })();
+ 
