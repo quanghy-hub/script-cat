@@ -1,7 +1,7 @@
 // ==UserScript== 
 // @name         Quick Search
 // @namespace    qsb.search.bubble
-// @version      1.5.1
+// @version      1.5.2
 // @description  Bôi đen là hiện bong bóng; ảnh: di chuột / giữ lâu / nhấp chuột phải. 8 nhà cung cấp + Copy + Select all + Cài đặt + Tải ảnh.
 // @match        *://*/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/serch.js
