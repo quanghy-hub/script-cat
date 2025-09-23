@@ -1,8 +1,8 @@
-// ==UserScript== 
+// ==UserScript==
 // @name         Quick Search
 // @namespace    qsb.search.bubble
-// @version      1.4.0
-// @description  Bôi đen là hiện bong bóng; ảnh: giữ lâu hoặc nhấp chuột phải. 10 icon: 8 nhà cung cấp + Copy + Cài đặt + Tải ảnh.
+// @version      1.5.0
+// @description  Bôi đen là hiện bong bóng; ảnh: di chuột / giữ lâu / nhấp chuột phải. 8 nhà cung cấp + Copy + Select all + Cài đặt + Tải ảnh.
 // @match        *://*/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/serch.js
 // @downloadURL  https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/serch.js
@@ -73,6 +73,21 @@
     }
   };
 
+  const selectAllSmart = () => {
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
+      try { ae.focus(); ae.select(); return true; } catch { /* noop */ }
+    }
+    try {
+      const sel = getSelection?.(); if (!sel) return false;
+      sel.removeAllRanges();
+      const r = document.createRange();
+      r.selectNodeContents(document.body || document.documentElement);
+      sel.addRange(r);
+      return true;
+    } catch { return false; }
+  };
+
   const filenameFromUrl = (u) => {
     try {
       const url = new URL(u, location.href);
@@ -83,7 +98,6 @@
   };
 
   const downloadImage = (src) => {
-    // Prefer GM_download to bypass CORS
     if (typeof GM_download === 'function') {
       try {
         GM_download({ url: src, name: filenameFromUrl(src), saveAs: false, onerror: ()=>fallback(), ontimeout: ()=>fallback() });
@@ -92,7 +106,6 @@
     }
     return fallback();
     function fallback(){
-      // Fallback: open image in new tab, let user save manually
       GM_openInTab(src, {active:true, insert:true, setParent:true});
       return false;
     }
@@ -118,7 +131,6 @@
     .qsb-grid{display:grid; grid-template-columns: 1fr 2fr 2fr; gap:6px; align-items:center}
     .qsb-grid input, .qsb-grid select{width:100%; padding:5px 7px; background:#12151b; border:1px solid #2a2d33; border-radius:8px; color:#e6e6e6; font:13px/1.3 system-ui}
     .qsb-grid label{font:12px/1.4 system-ui; opacity:.85}
-    .qsb-row{display:contents}
     .qsb-actions{display:flex; gap:8px; justify-content:flex-end; margin-top:10px}
     .qsb-btn{padding:7px 10px; border:1px solid #2a2d33; border-radius:10px; background:#151923; color:#e6e6e6; cursor:pointer; font:13px/1 system-ui}
     .qsb-btn.primary{background:#1f6feb; border-color:#1f6feb; color:#fff}
@@ -128,6 +140,7 @@
   `);
 
   let bubble, iconGrid, lastCtx = null, selTimer = null;
+  let hoverTimer = null, hoverHideTimer = null, hoverImgEl = null;
 
   function ensureBubble(){
     if (bubble) return bubble;
@@ -138,6 +151,12 @@
     iconGrid = document.createElement('div');
     iconGrid.className = 'qsb-icons';
     bubble.appendChild(iconGrid);
+
+    // giữ menu khi trỏ vào bong bóng sau khi rời ảnh
+    bubble.addEventListener('mouseenter', () => { clearTimeout(hoverHideTimer); });
+    bubble.addEventListener('mouseleave', () => {
+      if (!hoverImgEl || !hoverImgEl.matches(':hover')) hideBubble();
+    });
 
     document.body.appendChild(bubble);
     return bubble;
@@ -160,7 +179,7 @@
     const providers = getProviders();
     const { from, to } = getCfg();
 
-    // 1) Copy
+    // Copy
     const copyBtn = document.createElement('div');
     copyBtn.className = 'qsb-item';
     copyBtn.title = 'Copy';
@@ -175,7 +194,20 @@
     });
     iconGrid.appendChild(copyBtn);
 
-    // 2..9) Providers (8)
+    // Select all (giữ menu, không hide)
+    const selAllBtn = document.createElement('div');
+    selAllBtn.className = 'qsb-item';
+    selAllBtn.title = 'Select all';
+    selAllBtn.innerHTML = `<span class="glyph">⤢</span>`;
+    selAllBtn.addEventListener('click', (e)=>{
+      e.preventDefault(); e.stopPropagation();
+      const ok = selectAllSmart();
+      // vẫn giữ bubble; vị trí giữ nguyên
+      toast(ok ? 'Đã chọn hết' : 'Không chọn được', ctx.x, ctx.y);
+    });
+    iconGrid.appendChild(selAllBtn);
+
+    // Providers (8)
     providers.forEach((p)=>{
       const btn = document.createElement('div');
       btn.className = 'qsb-item';
@@ -204,7 +236,7 @@
       iconGrid.appendChild(btn);
     });
 
-    // 10) Settings
+    // Cài đặt
     const setBtn = document.createElement('div');
     setBtn.className = 'qsb-item';
     setBtn.title = 'Cài đặt';
@@ -212,7 +244,7 @@
     setBtn.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); openSettings(); });
     iconGrid.appendChild(setBtn);
 
-/* --- New: Download icon appears when context is image --- */
+    // Tải ảnh (chỉ với ảnh)
     if (ctx.type === 'image') {
       const dlBtn = document.createElement('div');
       dlBtn.className = 'qsb-item';
@@ -259,13 +291,9 @@
     selTimer = setTimeout(handleSelectionShow, 90);
   });
 
-  // image → context menu (sites đôi khi chặn, đã dùng capture)
+  // context menu trên ảnh
   document.addEventListener('contextmenu', (ev)=>{
-    const t = ev.target;
-    if (!(t instanceof Element)) return;
-    let img = null;
-    if (t.tagName==='IMG') img = t;
-    else img = t.closest?.('picture')?.querySelector('img') || null;
+    const img = getImgFromTarget(ev.target);
     if (!img) return;
     const src = img.currentSrc || img.src;
     if (!src) return;
@@ -275,53 +303,37 @@
     placeAndShow(lastCtx.x, lastCtx.y);
   }, {capture:true});
 
-  // NEW: long-press on image (pointer-based, mobile + desktop)
+  // long-press trên ảnh (mobile + desktop)
   (function enableImageLongPress(){
-    let pressTimer = null, startX=0, startY=0, moved=false, targetImg=null;
-
-    const HOLD_MS = 450;
-    const MOVE_CANCEL_PX = 6;
+    let pressTimer = null, startX=0, startY=0, targetImg=null;
+    const HOLD_MS = 450, MOVE_CANCEL_PX = 6;
 
     const onDown = (ev) => {
-      const t = ev.target;
-      if (!(t instanceof Element)) return;
-      // find an <img> under pointer
-      let img = null;
-      if (t.tagName === 'IMG') img = t;
-      else img = t.closest?.('picture')?.querySelector('img') || null;
+      const img = getImgFromTarget(ev.target);
       if (!img) return;
-
       targetImg = img;
-      moved = false;
       startX = (ev.touches?.[0]?.pageX) ?? ev.pageX;
       startY = (ev.touches?.[0]?.pageY) ?? ev.pageY;
-
       clearTimeout(pressTimer);
       pressTimer = setTimeout(()=>{
         if (!targetImg) return;
         const src = targetImg.currentSrc || targetImg.src;
         if (!src) return;
-        const x = startX + 6;
-        const y = startY + 6;
+        const x = startX + 6, y = startY + 6;
         lastCtx = { type:'image', img: src, x, y };
         buildBubble(lastCtx);
         placeAndShow(x, y);
       }, HOLD_MS);
     };
-
     const onMove = (ev) => {
       if (!pressTimer) return;
       const x = (ev.touches?.[0]?.pageX) ?? ev.pageX;
       const y = (ev.touches?.[0]?.pageY) ?? ev.pageY;
       if (Math.abs(x-startX) > MOVE_CANCEL_PX || Math.abs(y-startY) > MOVE_CANCEL_PX) {
-        moved = true;
         clearTimeout(pressTimer); pressTimer = null; targetImg=null;
       }
     };
-
-    const onUpOrCancel = () => {
-      clearTimeout(pressTimer); pressTimer = null; targetImg=null;
-    };
+    const onUpOrCancel = () => { clearTimeout(pressTimer); pressTimer = null; targetImg=null; };
 
     document.addEventListener('pointerdown', onDown, {passive:true, capture:true});
     document.addEventListener('pointermove', onMove, {passive:true, capture:true});
@@ -329,6 +341,43 @@
     document.addEventListener('pointercancel', onUpOrCancel, {passive:true, capture:true});
     document.addEventListener('scroll', onUpOrCancel, {passive:true, capture:true});
   })();
+
+  // NEW: hover chuột lên ảnh → hiện menu ngay (desktop)
+  const getImgFromTarget = (t) => {
+    if (!(t instanceof Element)) return null;
+    if (t.tagName === 'IMG') return t;
+    const pic = t.closest?.('picture');
+    return pic ? pic.querySelector('img') : null;
+  };
+  document.addEventListener('pointerenter', (ev)=>{
+    if (ev.pointerType !== 'mouse') return;
+    const img = getImgFromTarget(ev.target);
+    if (!img) return;
+    hoverImgEl = img;
+    clearTimeout(hoverHideTimer);
+    clearTimeout(hoverTimer);
+    const px = ev.pageX || (ev.clientX + scrollX);
+    const py = ev.pageY || (ev.clientY + scrollY);
+    hoverTimer = setTimeout(()=>{
+      const src = img.currentSrc || img.src;
+      if (!src) return;
+      lastCtx = { type:'image', img: src, x: px + 6, y: py + 6 };
+      buildBubble(lastCtx);
+      placeAndShow(lastCtx.x, lastCtx.y);
+    }, 120);
+  }, {capture:true});
+
+  document.addEventListener('pointerleave', (ev)=>{
+    if (ev.pointerType !== 'mouse') return;
+    const img = getImgFromTarget(ev.target);
+    if (!img) return;
+    if (img === hoverImgEl) {
+      clearTimeout(hoverTimer);
+      hoverHideTimer = setTimeout(()=>{
+        if (!bubble || !bubble.matches(':hover')) hideBubble();
+      }, 220);
+    }
+  }, {capture:true});
 
   // dismiss
   document.addEventListener('mousedown', (e)=>{ if (bubble && !bubble.contains(e.target)) hideBubble(); }, true);
@@ -413,4 +462,3 @@
 
   GM_registerMenuCommand('⚙️ Cấu hình Quick Search Bubble', openSettings);
 })();
- 
