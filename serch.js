@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Quick Search
 // @namespace    qsb.search.bubble
-// @version      1.5.0
+// @version      1.5.1
 // @description  Bôi đen là hiện bong bóng; ảnh: di chuột / giữ lâu / nhấp chuột phải. 8 nhà cung cấp + Copy + Select all + Cài đặt + Tải ảnh.
 // @match        *://*/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/serch.js
@@ -113,12 +113,13 @@
 
   GM_addStyle(`
     .qsb-bubble{
-      position:absolute; z-index:2147483646; display:inline-block;
+      position:fixed; z-index:2147483646; display:inline-block;
       background:#101114;color:#fff;border:1px solid #2a2d33;border-radius:12px;
-      padding:8px 10px 10px 10px; box-shadow:0 8px 22px rgba(0,0,0,.28)
+      padding:8px 10px 10px 10px; box-shadow:0 8px 22px rgba(0,0,0,.28);
+      overflow-anchor:none; contain:layout paint size; user-select:none
     }
-    .qsb-icons{ display:grid; grid-template-columns: repeat(5, 32px); grid-auto-rows:32px; gap:8px; }
-    .qsb-item{ width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid transparent; user-select:none }
+    .qsb-icons{ display:grid; grid-template-columns: repeat(5, 32px); grid-auto-rows:32px; gap:8px; max-width: 200px }
+    .qsb-item{ width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid transparent }
     .qsb-item:hover{ background:#1b1e24;border-color:#2d3138 }
     .qsb-item img{ width:18px;height:18px; object-fit:contain }
     .qsb-item .glyph{ font:16px/1 system-ui }
@@ -152,7 +153,6 @@
     iconGrid.className = 'qsb-icons';
     bubble.appendChild(iconGrid);
 
-    // giữ menu khi trỏ vào bong bóng sau khi rời ảnh
     bubble.addEventListener('mouseenter', () => { clearTimeout(hoverHideTimer); });
     bubble.addEventListener('mouseleave', () => {
       if (!hoverImgEl || !hoverImgEl.matches(':hover')) hideBubble();
@@ -161,14 +161,19 @@
     document.body.appendChild(bubble);
     return bubble;
   }
-  function hideBubble(){ if (bubble) bubble.style.display = 'none'; lastCtx = null; }
+  function hideBubble(){
+    if (bubble) bubble.style.display = 'none';
+    setTimeout(()=>{ lastCtx = null; }, 50);
+  }
 
   function toast(msg, x, y){
     const el = document.createElement('div');
     el.className = 'qsb-toast';
     el.textContent = msg;
-    el.style.left = Math.min(x, scrollX + innerWidth - 200) + 'px';
-    el.style.top  = Math.max(6, y - 36) + 'px';
+    const left = Math.min(x - scrollX, innerWidth - 200);
+    const top  = Math.max(6, y - scrollY - 36);
+    el.style.left = Math.max(6, left) + 'px';
+    el.style.top  = top + 'px';
     document.body.appendChild(el);
     setTimeout(()=>el.remove(), 1200);
   }
@@ -194,7 +199,7 @@
     });
     iconGrid.appendChild(copyBtn);
 
-    // Select all (giữ menu, không hide)
+    // Select all
     const selAllBtn = document.createElement('div');
     selAllBtn.className = 'qsb-item';
     selAllBtn.title = 'Select all';
@@ -202,12 +207,11 @@
     selAllBtn.addEventListener('click', (e)=>{
       e.preventDefault(); e.stopPropagation();
       const ok = selectAllSmart();
-      // vẫn giữ bubble; vị trí giữ nguyên
       toast(ok ? 'Đã chọn hết' : 'Không chọn được', ctx.x, ctx.y);
     });
     iconGrid.appendChild(selAllBtn);
 
-    // Providers (8)
+    // Providers
     providers.forEach((p)=>{
       const btn = document.createElement('div');
       btn.className = 'qsb-item';
@@ -244,7 +248,7 @@
     setBtn.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); openSettings(); });
     iconGrid.appendChild(setBtn);
 
-    // Tải ảnh (chỉ với ảnh)
+    // Tải ảnh
     if (ctx.type === 'image') {
       const dlBtn = document.createElement('div');
       dlBtn.className = 'qsb-item';
@@ -254,7 +258,7 @@
         e.preventDefault(); e.stopPropagation();
         const ok = downloadImage(ctx.img);
         hideBubble();
-        toast(ok ? 'Đang tải / mở ảnh' : 'Mở ảnh để lưu', ctx.x, ctx.y);
+        toast(ok ? 'Đang tải hoặc mở ảnh' : 'Mở ảnh để lưu', ctx.x, ctx.y);
       });
       iconGrid.appendChild(dlBtn);
     }
@@ -262,8 +266,9 @@
 
   function placeAndShow(x,y){
     ensureBubble();
-    const left = Math.max(6, Math.min(x, scrollX + innerWidth - bubble.offsetWidth - 6));
-    const top  = Math.max(6, Math.min(y, scrollY + innerHeight - bubble.offsetHeight - 6));
+    const vw = innerWidth, vh = innerHeight;
+    const left = Math.max(6, Math.min(x - scrollX, vw - bubble.offsetWidth - 6));
+    const top  = Math.max(6, Math.min(y - scrollY, vh - bubble.offsetHeight - 6));
     bubble.style.left = left + 'px';
     bubble.style.top  = top  + 'px';
     bubble.style.display = 'inline-block';
@@ -287,11 +292,12 @@
     placeAndShow(lastCtx.x, lastCtx.y);
   }
   document.addEventListener('selectionchange', ()=>{
+    if (lastCtx && lastCtx.type === 'image') return;
     clearTimeout(selTimer);
     selTimer = setTimeout(handleSelectionShow, 90);
   });
 
-  // context menu trên ảnh
+  // ảnh: context menu
   document.addEventListener('contextmenu', (ev)=>{
     const img = getImgFromTarget(ev.target);
     if (!img) return;
@@ -303,7 +309,7 @@
     placeAndShow(lastCtx.x, lastCtx.y);
   }, {capture:true});
 
-  // long-press trên ảnh (mobile + desktop)
+  // ảnh: long-press
   (function enableImageLongPress(){
     let pressTimer = null, startX=0, startY=0, targetImg=null;
     const HOLD_MS = 450, MOVE_CANCEL_PX = 6;
@@ -342,7 +348,7 @@
     document.addEventListener('scroll', onUpOrCancel, {passive:true, capture:true});
   })();
 
-  // NEW: hover chuột lên ảnh → hiện menu ngay (desktop)
+  // ảnh: hover để hiện menu
   const getImgFromTarget = (t) => {
     if (!(t instanceof Element)) return null;
     if (t.tagName === 'IMG') return t;
