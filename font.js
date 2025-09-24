@@ -1,229 +1,212 @@
 // ==UserScript==
-// @name         Per‑site Font Size Slider (Mobile Chromium) + ScriptCat Menu
-// @namespace    qh.fontsize.per.site
-// @version      1.2.0
-// @description  Nút Aa mở bảng cài đặt để tăng/giảm cỡ chữ THEO TỪNG WEBSITE. Có thêm mục Menu của ScriptCat (GM_registerMenuCommand). 3 chế độ áp dụng: Chỉ phóng CHỮ (text-size-adjust), Đổi cỡ chữ gốc (root font-size), Phóng CẢ TRANG (zoom). Lưu per-host.
-// @author       you
-// @match        http://*/*
-// @match        https://*/*
+// @name         Aa Text Size per-site (Chromium mobile)
+// @namespace    qh.textsize.per_site
+// @version      1.3.0
+// @description  Nút "Aa" mở bảng cài đặt để tăng/giảm cỡ chữ THEO TỪNG WEBSITE. Chỉ phóng chữ bằng text-size-adjust. Bước 1%. Tối đa +100%. Có menu ScriptCat.
+// @match        *://*/*
+// @exclude      *://*/*
 // @run-at       document-start
-// @inject-into  page
-// @grant        GM_registerMenuCommand
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_addStyle
+// @grant        GM_registerMenuCommand
+// @license      MIT
 // ==/UserScript==
 
-(function () {
+(() => {
   'use strict';
 
-  // --------------- Utils ---------------
-  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
-  const HOST = location.host; // per-host
-  const KEY = (k) => `qfs:${HOST}:${k}`;
-  const DEFAULT_CFG = { scale: 1.00, mode: 'text', x: 12, y: 14 };
+  // ===== Storage (per host) =====
+  const HOST = location.host.replace(/^www\./, '');
+  const KEY  = `qh_ts:${HOST}`;
+  const DEFAULT = { enabled: true, adjPct: 0 }; // adjPct = phần trăm tăng thêm so với 100% (phạm vi đề xuất: 0..100)
+  let state = read();
 
-  // Prefer GM_* (persist across iframes/origins under one script). Fallback to localStorage.
-  const hasGM = typeof GM_getValue === 'function' && typeof GM_setValue === 'function';
-  function loadCfg() {
-    try {
-      if (hasGM) {
-        const v = GM_getValue(KEY('cfg'));
-        if (!v) return { ...DEFAULT_CFG };
-        const obj = JSON.parse(v);
-        return normalize(obj);
-      } else {
-        const raw = localStorage.getItem(KEY('cfg'));
-        if (!raw) return { ...DEFAULT_CFG };
-        return normalize(JSON.parse(raw));
-      }
-    } catch { return { ...DEFAULT_CFG }; }
+  function read() {
+    try { return Object.assign({}, DEFAULT, JSON.parse(GM_getValue(KEY, '{}'))); }
+    catch { return { ...DEFAULT }; }
   }
-  function saveCfg(cfg) {
+  function save() { GM_setValue(KEY, JSON.stringify(state)); }
+
+  // ===== CSS apply (text only) =====
+  // Dựa trên -webkit-text-size-adjust / text-size-adjust. Ảnh/video không bị phóng.
+  GM_addStyle(`
+    html{ --qh_ts_value: ${100 + state.adjPct}% !important; }
+    html{ -webkit-text-size-adjust: var(--qh_ts_value) !important; text-size-adjust: var(--qh_ts_value) !important; }
+    /* UI */
+    .qh-aa-btn{
+      position: fixed; inset: auto 12px 12px auto;
+      z-index: 2147483647; width: 40px; height: 40px;
+      border-radius: 10px; border: 1px solid rgba(0,0,0,.15);
+      background: rgba(255,255,255,.9); color:#111; font: 700 16px/40px system-ui, sans-serif;
+      text-align:center; box-shadow: 0 2px 12px rgba(0,0,0,.15);
+      user-select:none; -webkit-user-select:none;
+    }
+    .qh-aa-btn:active{ transform: scale(.98); }
+    .qh-aa-panel{
+      position: fixed; inset: auto 12px 60px auto; z-index: 2147483647;
+      min-width: 240px; padding: 10px 12px; border-radius: 12px;
+      background: rgba(255,255,255,.98); color:#111; border:1px solid rgba(0,0,0,.12);
+      box-shadow: 0 8px 32px rgba(0,0,0,.18); font: 500 14px/1.35 system-ui, sans-serif;
+    }
+    .qh-aa-row{ display:flex; align-items:center; gap:8px; margin-top:8px; }
+    .qh-aa-row:first-child{ margin-top:0; }
+    .qh-aa-range{ flex:1; }
+    .qh-aa-badge{ min-width: 64px; text-align:right; font-weight:700; }
+    .qh-aa-btn2{
+      padding:6px 10px; border-radius:8px; border:1px solid rgba(0,0,0,.12); background:#fff;
+      font: 600 13px/1 system-ui, sans-serif;
+    }
+    .qh-aa-top{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+    .qh-aa-top .title{ font-weight:800; }
+    .qh-aa-x{ width:28px; height:28px; border-radius:8px; border:1px solid rgba(0,0,0,.12); background:#fff; }
+    .qh-aa-note{ font-size:12px; color:#555; margin-top:6px; }
+    @media (prefers-color-scheme: dark) {
+      .qh-aa-btn{ background: rgba(20,20,20,.9); color:#f1f1f1; border-color: rgba(255,255,255,.15); }
+      .qh-aa-panel{ background: rgba(26,26,26,.98); color:#f1f1f1; border-color: rgba(255,255,255,.12); }
+      .qh-aa-btn2, .qh-aa-x{ background:#151515; color:#eee; border-color: rgba(255,255,255,.12); }
+      .qh-aa-note{ color:#aaa; }
+    }
+  `);
+
+  // ===== UI =====
+  let $btn, $panel, $range, $out, $enable;
+
+  function mountUI() {
+    if (!$btn) {
+      $btn = document.createElement('button');
+      $btn.className = 'qh-aa-btn';
+      $btn.type = 'button';
+      $btn.textContent = 'Aa';
+      $btn.title = 'Mở cài đặt cỡ chữ';
+      $btn.addEventListener('click', togglePanel);
+    }
+    if (!$panel) {
+      $panel = document.createElement('div');
+      $panel.className = 'qh-aa-panel';
+      $panel.style.display = 'none';
+      $panel.innerHTML = `
+        <div class="qh-aa-top">
+          <div class="title">Cỡ chữ trang này</div>
+          <button class="qh-aa-x" type="button" aria-label="Đóng">✕</button>
+        </div>
+        <div class="qh-aa-row">
+          <input class="qh-aa-range" type="range" min="0" max="100" step="1" value="${clamp(state.adjPct,0,100)}" />
+          <div class="qh-aa-badge"><span id="qh-aa-out">${state.adjPct}</span>%</div>
+        </div>
+        <div class="qh-aa-row">
+          <button class="qh-aa-btn2" data-delta="-1">-1%</button>
+          <button class="qh-aa-btn2" data-delta="+1">+1%</button>
+          <button class="qh-aa-btn2" data-set="0">Reset</button>
+        </div>
+        <div class="qh-aa-row">
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="qh-aa-enable" type="checkbox" ${state.enabled ? 'checked' : ''} />
+            Bật trên ${HOST}
+          </label>
+        </div>
+        <div class="qh-aa-note">Chỉ ảnh hưởng chữ bằng <code>text-size-adjust</code>. Bước 1%, tối đa +100%.</div>
+      `;
+      $panel.querySelector('.qh-aa-x').onclick = () => showPanel(false);
+      $range = $panel.querySelector('.qh-aa-range');
+      $out   = $panel.querySelector('#qh-aa-out');
+      $enable= $panel.querySelector('#qh-aa-enable');
+
+      $range.addEventListener('input', () => {
+        state.adjPct = clamp(parseInt($range.value || '0',10), 0, 100);
+        apply();
+        $out.textContent = state.adjPct;
+        save();
+      });
+      $panel.querySelectorAll('.qh-aa-btn2[data-delta]').forEach(b => {
+        b.addEventListener('click', () => {
+          const d = b.getAttribute('data-delta') === '+1' ? 1 : -1;
+          state.adjPct = clamp(state.adjPct + d, 0, 100);
+          apply();
+          $range.value = state.adjPct;
+          $out.textContent = state.adjPct;
+          save();
+        });
+      });
+      $panel.querySelector('.qh-aa-btn2[data-set="0"]').onclick = () => {
+        state.adjPct = 0;
+        apply();
+        $range.value = 0;
+        $out.textContent = 0;
+        save();
+      };
+      $enable.onchange = () => {
+        state.enabled = !!$enable.checked;
+        apply();
+        save();
+      };
+
+      // Ẩn khi chạm ngoài
+      document.addEventListener('click', (e) => {
+        if (!$panel || $panel.style.display === 'none') return;
+        const inside = $panel.contains(e.target) || $btn.contains(e.target);
+        if (!inside) showPanel(false);
+      }, true);
+    }
+
+    // Gắn vào DOM khi tương tác được
+    const mount = () => {
+      if (state.enabled) {
+        if (!$btn.isConnected) document.documentElement.appendChild($btn);
+      } else {
+        if ($btn.isConnected) $btn.remove();
+        if ($panel && $panel.isConnected) $panel.remove();
+      }
+      if (state.enabled) {
+        if (!$panel.isConnected) document.documentElement.appendChild($panel);
+      }
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', mount, { once: true });
+    } else {
+      mount();
+    }
+  }
+
+  function showPanel(v) {
+    if (!$panel) return;
+    $panel.style.display = v ? 'block' : 'none';
+  }
+  function togglePanel() {
+    if (!$panel) return;
+    const v = $panel.style.display !== 'block';
+    showPanel(v);
+  }
+
+  function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
+
+  // ===== Apply scale =====
+  function apply() {
+    const pct = state.enabled ? (100 + clamp(state.adjPct, 0, 100)) : 100;
+    document.documentElement.style.setProperty('--qh_ts_value', pct + '%');
+    // Thiết lập lại thuộc tính để chắc chắn ưu tiên
+    document.documentElement.style.setProperty('text-size-adjust', pct + '%', 'important');
+    document.documentElement.style.setProperty('-webkit-text-size-adjust', pct + '%', 'important');
+    // Cập nhật UI nếu tồn tại
+    if ($enable) $enable.checked = !!state.enabled;
+  }
+
+  // ===== ScriptCat Menu =====
+  function registerMenu() {
     try {
-      const s = JSON.stringify(cfg);
-      if (hasGM) GM_setValue(KEY('cfg'), s); else localStorage.setItem(KEY('cfg'), s);
+      GM_registerMenuCommand(`Aa • Mở bảng`, () => { mountUI(); showPanel(true); });
+      GM_registerMenuCommand(`Aa • +1%`, () => { state.adjPct = clamp(state.adjPct + 1, 0, 100); save(); apply(); });
+      GM_registerMenuCommand(`Aa • -1%`, () => { state.adjPct = clamp(state.adjPct - 1, 0, 100); save(); apply(); });
+      GM_registerMenuCommand(`Aa • Reset (0%)`, () => { state.adjPct = 0; save(); apply(); });
+      GM_registerMenuCommand(state.enabled ? `Aa • Tắt trên ${HOST}` : `Aa • Bật trên ${HOST}`, () => {
+        state.enabled = !state.enabled; save(); apply(); mountUI();
+      });
     } catch {}
   }
-  function normalize(obj) {
-    const scale = clamp(Number(obj.scale) || 1, 0.5, 2.8);
-    const mode = ['text','root','zoom'].includes(obj.mode) ? obj.mode : 'text';
-    const x = Number.isFinite(obj.x) ? obj.x : 12;
-    const y = Number.isFinite(obj.y) ? obj.y : 14;
-    return { scale, mode, x, y };
-  }
 
-  // --------------- CSS Apply ---------------
-  const STYLE_ID = 'qfs-style';
-  function ensureStyleEl() {
-    let el = document.getElementById(STYLE_ID);
-    if (!el) {
-      el = document.createElement('style');
-      el.id = STYLE_ID;
-      document.documentElement.appendChild(el);
-    }
-    return el;
-  }
+  // ===== Init =====
+  registerMenu();
+  apply();
+  mountUI();
 
-  function applyScale(cfg) {
-    const s = clamp(cfg.scale, 0.5, 2.8);
-    const pct = Math.round(s * 100);
-    const el = ensureStyleEl();
-
-    document.documentElement.classList.remove('qfs-zoom');
-
-    if (cfg.mode === 'text') {
-      // Tốt cho site mobile; không phá layout px cố định
-      el.textContent = `html{ -webkit-text-size-adjust:${pct}% !important; text-size-adjust:${pct}% !important; }`;
-    } else if (cfg.mode === 'root') {
-      // Đổi cỡ chữ gốc: hiệu lực với rem/em. Một số site dùng px sẽ ít đổi.
-      el.textContent = `html{ font-size:${pct}% !important; }
-      body, input, textarea, button, select { font-size: inherit !important; }`;
-    } else {
-      // Phóng cả trang (ưu tiên zoom, fallback transform cho nơi không hỗ trợ)
-      const f = s.toFixed(3);
-      document.documentElement.classList.add('qfs-zoom');
-      el.textContent = `html.qfs-zoom{ zoom:${f} !important; }
-@supports not (zoom:1){
-  html.qfs-zoom{ transform: scale(${f}) !important; transform-origin: 0 0 !important; }
-  body{ width: calc(100% / ${f}) !important; }
-}`;
-    }
-  }
-
-  // Re-apply if hostile CSS tries to remove style (SPA nav, etc.)
-  const mo = new MutationObserver(() => {
-    if (!document.getElementById(STYLE_ID)) {
-      applyScale(cfg);
-    }
-  });
-
-  // --------------- UI ---------------
-  let cfg = loadCfg();
-
-  function createUI() {
-    const host = document.createElement('div');
-    host.style.position = 'fixed';
-    host.style.zIndex = '2147483647';
-    host.style.userSelect = 'none';
-    host.style.pointerEvents = 'none';
-    host.style.left = `${cfg.x}px`;
-    host.style.bottom = `${cfg.y}px`;
-
-    const shadow = host.attachShadow({ mode: 'open' });
-    const wrap = document.createElement('div');
-    wrap.innerHTML = `
-      <style>
-        :host, * { box-sizing: border-box; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-        .btn { pointer-events:auto; display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; border-radius:12px; border:1px solid rgba(120,120,120,.35); background:rgba(28,28,28,.85); color:#fff; backdrop-filter: blur(6px); box-shadow: 0 4px 16px rgba(0,0,0,.28); cursor:pointer; }
-        .btn:active { transform: scale(.98); }
-        .panel { pointer-events:auto; position:absolute; bottom:50px; left:0; width:min(92vw,340px); padding:12px; border-radius:14px; background:rgba(20,20,20,.98); color:#eaeaea; border:1px solid rgba(120,120,120,.32); box-shadow: 0 10px 30px rgba(0,0,0,.45); display:none; }
-        .panel.show { display:block; }
-        .title { font-weight:700; font-size:14px; margin-bottom:6px; }
-        .row { display:flex; align-items:center; gap:8px; margin:10px 0 4px; }
-        .pct { min-width:52px; text-align:right; font-variant-numeric: tabular-nums; }
-        input[type=range]{ width:100%; }
-        .seg { display:flex; gap:8px; margin-top:8px; }
-        .seg label { flex:1; display:flex; align-items:center; gap:6px; padding:8px; border-radius:10px; border:1px solid rgba(130,130,130,.35); cursor:pointer; background: rgba(255,255,255,.03); }
-        .seg input{ accent-color:#3b82f6; }
-        .actions { display:flex; justify-content:space-between; gap:8px; margin-top:10px; }
-        button.secondary { background:#111; color:#ddd; border:1px solid rgba(130,130,130,.35); padding:8px 10px; border-radius:10px; cursor:pointer; }
-        button.primary { background:#3b82f6; color:#fff; border:none; padding:8px 12px; border-radius:10px; cursor:pointer; }
-        .drag-hint{ position:absolute; top:-22px; left:0; font-size:11px; opacity:.7; }
-      </style>
-      <button class="btn" title="Cỡ chữ theo trang (giữ để kéo)">Aa</button>
-      <div class="panel" role="dialog" aria-label="Cỡ chữ theo trang">
-        <div class="title">Cỡ chữ trang này</div>
-        <div class="row">
-          <input class="range" type="range" min="50" max="280" step="5">
-          <div class="pct">100%</div>
-        </div>
-        <div class="seg" role="radiogroup" aria-label="Chế độ áp dụng">
-          <label><input type="radio" name="mode" value="text"> <span>Chỉ phóng chữ</span></label>
-          <label><input type="radio" name="mode" value="root"> <span>Đổi cỡ chữ gốc</span></label>
-          <label><input type="radio" name="mode" value="zoom"> <span>Phóng cả trang</span></label>
-        </div>
-        <div class="actions">
-          <button class="secondary js-reset">Đặt lại</button>
-          <button class="primary js-close">Đóng</button>
-        </div>
-      </div>
-    `;
-    shadow.appendChild(wrap);
-
-    const btn = shadow.querySelector('.btn');
-    const panel = shadow.querySelector('.panel');
-    const range = shadow.querySelector('.range');
-    const pct = shadow.querySelector('.pct');
-    const radios = shadow.querySelectorAll('input[name="mode"]');
-    const closeBtn = shadow.querySelector('.js-close');
-    const resetBtn = shadow.querySelector('.js-reset');
-
-    // Init
-    range.value = String(Math.round(cfg.scale * 100));
-    pct.textContent = `${Math.round(cfg.scale * 100)}%`;
-    radios.forEach(r => r.checked = (r.value === cfg.mode));
-
-    // Toggle
-    btn.addEventListener('click', () => panel.classList.toggle('show'), { passive: true });
-    closeBtn.addEventListener('click', () => panel.classList.remove('show'));
-
-    // Drag (long-press then move)
-    let pressT = 0, dragging = false, startX=0, startY=0, startL=0, startB=0;
-    const LONG = 280; // ms
-    btn.addEventListener('touchstart', (e) => { pressT = Date.now(); startDrag(e.touches[0]); }, { passive: true });
-    btn.addEventListener('mousedown', (e) => { pressT = Date.now(); startDrag(e); });
-    function startDrag(p){ dragging=false; startX=p.clientX; startY=p.clientY; const r = host.getBoundingClientRect(); startL = r.left; startB = window.innerHeight - r.bottom; }
-    function maybeStart(e){ if (!dragging && Date.now()-pressT>LONG){ dragging=true; panel.classList.remove('show'); }}
-    function moveTo(p){ if (!dragging) return; const dx=p.clientX-startX, dy=p.clientY-startY; const nx = clamp(startL+dx, 6, window.innerWidth-50); const ny = clamp(startB-dy, 6, window.innerHeight-50); host.style.left = nx+"px"; host.style.bottom = ny+"px"; cfg.x = nx; cfg.y = ny; saveCfg(cfg); }
-    window.addEventListener('mousemove', (e)=>{ maybeStart(e); moveTo(e); });
-    window.addEventListener('touchmove', (e)=>{ const t=e.touches[0]; maybeStart(t); moveTo(t); }, { passive: true });
-    window.addEventListener('mouseup', ()=>{ dragging=false; });
-    window.addEventListener('touchend', ()=>{ dragging=false; });
-
-    // Change handlers
-    range.addEventListener('input', () => {
-      cfg.scale = clamp(Number(range.value)/100, 0.5, 2.8);
-      pct.textContent = `${Math.round(cfg.scale*100)}%`;
-      saveCfg(cfg); applyScale(cfg);
-    });
-    radios.forEach(r => r.addEventListener('change', () => {
-      if (!r.checked) return; cfg.mode = r.value; saveCfg(cfg); applyScale(cfg);
-    }));
-    resetBtn.addEventListener('click', () => {
-      cfg = { ...DEFAULT_CFG }; saveCfg(cfg);
-      range.value = '100'; pct.textContent='100%';
-      radios.forEach(r => r.checked = (r.value==='text'));
-      host.style.left = cfg.x+'px'; host.style.bottom = cfg.y+'px';
-      applyScale(cfg);
-    });
-
-    return host;
-  }
-
-  function mount() {
-    applyScale(cfg);
-    const ui = createUI();
-    document.documentElement.appendChild(ui);
-    mo.observe(document.documentElement, { childList: true, subtree: true });
-
-    // ScriptCat menu entries
-    if (typeof GM_registerMenuCommand === 'function') {
-      GM_registerMenuCommand('Font size: mở bảng', () => {
-        const p = document.querySelector('#qfs-open-panel-button-in-page');
-        // Fallback: toggle via dispatching click to our btn in shadow (not directly reachable)
-        alert('Mẹo: Bấm nút Aa ở góc để mở panel. (Giữ để kéo)');
-      });
-      GM_registerMenuCommand('Font size: +10%', () => { cfg.scale = clamp(cfg.scale+0.10, 0.5, 2.8); saveCfg(cfg); applyScale(cfg); });
-      GM_registerMenuCommand('Font size: -10%', () => { cfg.scale = clamp(cfg.scale-0.10, 0.5, 2.8); saveCfg(cfg); applyScale(cfg); });
-      GM_registerMenuCommand('Font size: đặt lại', () => { cfg={...DEFAULT_CFG}; saveCfg(cfg); applyScale(cfg); });
-    }
-  }
-
-  if (document.readyState === 'loading') {
-    // document-start: apply asap to giảm giật
-    applyScale(cfg);
-    addEventListener('DOMContentLoaded', mount, { once:true });
-  } else {
-    mount();
-  }
 })();
