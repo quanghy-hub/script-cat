@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         size text 
+// @name         Aa Text
 // @namespace    qh.textsize.per_site
-// @version      1.3.0
+// @version      1.4.0
 // @description  Nút "Aa" mở bảng cài đặt để tăng/giảm cỡ chữ THEO TỪNG WEBSITE. Chỉ phóng chữ bằng text-size-adjust. Bước 1%. Tối đa +100%. Có menu ScriptCat.
 // @match        *://*/*
-// @exclude      *://*/*
+// @exclude      *://mail.google.com/*
 // @run-at       document-start
 // @grant        GM_getValue
 // @grant        GM_setValue
