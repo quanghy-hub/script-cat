@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Aa Text
 // @namespace    qh.textsize.per_site
-// @version      1.5.0
-// @description  Tăng/giảm cỡ chữ THEO TỪNG WEBSITE bằng text-size-adjust. Bước 1%, tối đa +100%. Chỉ hiện cài đặt qua GM_registerMenuCommand.
+// @version      1.6.0
+// @description  Tăng/giảm cỡ chữ THEO TỪNG WEBSITE bằng text-size-adjust. Thang 50–300% (100% = mặc định). Menu ScriptCat, không icon nổi.
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
 // @run-at       document-start
@@ -18,19 +18,27 @@
 
   const HOST = location.host.replace(/^www\./, '');
   const KEY  = `qh_ts:${HOST}`;
-  const DEFAULT = { enabled: true, adjPct: 0 };
-  let state = read();
+  const DEFAULT = { enabled: true, scalePct: 100 }; // 50..300
 
+  // --- load + migrate (from adjPct -> scalePct) ---
+  let state = read();
   function read() {
-    try { return Object.assign({}, DEFAULT, JSON.parse(GM_getValue(KEY, '{}'))); }
-    catch { return { ...DEFAULT }; }
+    try {
+      const raw = JSON.parse(GM_getValue(KEY, '{}')) || {};
+      // migrate if old schema
+      if (typeof raw.adjPct === 'number' && typeof raw.scalePct !== 'number') {
+        raw.scalePct = clamp(100 + raw.adjPct, 50, 300);
+        delete raw.adjPct;
+      }
+      return Object.assign({}, DEFAULT, raw);
+    } catch { return { ...DEFAULT }; }
   }
   function save() { GM_setValue(KEY, JSON.stringify(state)); }
   function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
 
-  // Apply once at start
+  // --- base CSS (text only) ---
   GM_addStyle(`
-    html{ --qh_ts_value:${100 + clamp(state.adjPct,0,100)}% !important; }
+    html{ --qh_ts_value:${clamp(state.scalePct,50,300)}% !important; }
     html{ -webkit-text-size-adjust: var(--qh_ts_value) !important; text-size-adjust: var(--qh_ts_value) !important; }
     .qh-aa-panel{
       position: fixed; inset: auto 12px 12px auto; z-index: 2147483647;
@@ -53,33 +61,33 @@
   `);
 
   function apply() {
-    const pct = state.enabled ? (100 + clamp(state.adjPct,0,100)) : 100;
+    const pct = state.enabled ? clamp(state.scalePct, 50, 300) : 100;
     const root = document.documentElement;
     root.style.setProperty('--qh_ts_value', pct + '%');
     root.style.setProperty('text-size-adjust', pct + '%', 'important');
     root.style.setProperty('-webkit-text-size-adjust', pct + '%', 'important');
   }
 
-  // Panel only when opened from menu
+  // --- panel (open via ScriptCat menu only) ---
   let $panel, $range, $out, $enable;
-
   function openPanel() {
     closePanel();
     $panel = document.createElement('div');
     $panel.className = 'qh-aa-panel';
+    const cur = clamp(state.scalePct, 50, 300);
     $panel.innerHTML = `
       <div class="qh-aa-top">
         <div class="title">Cỡ chữ: ${HOST}</div>
         <button class="qh-aa-x" type="button" aria-label="Đóng">✕</button>
       </div>
       <div class="qh-aa-row">
-        <input class="qh-aa-range" type="range" min="0" max="100" step="1" value="${clamp(state.adjPct,0,100)}" />
-        <div class="qh-aa-badge"><span id="qh-aa-out">${state.adjPct}</span>%</div>
+        <input class="qh-aa-range" type="range" min="50" max="300" step="1" value="${cur}" />
+        <div class="qh-aa-badge"><span id="qh-aa-out">${cur}</span>%</div>
       </div>
       <div class="qh-aa-row">
         <button class="qh-aa-btn2" data-delta="-1">-1%</button>
         <button class="qh-aa-btn2" data-delta="+1">+1%</button>
-        <button class="qh-aa-btn2" data-set="0">Reset</button>
+        <button class="qh-aa-btn2" data-set="100">Reset 100%</button>
       </div>
       <div class="qh-aa-row">
         <label style="display:flex;align-items:center;gap:8px;">
@@ -87,7 +95,7 @@
           Bật trên ${HOST}
         </label>
       </div>
-      <div class="qh-aa-note">Chỉ phóng chữ bằng <code>text-size-adjust</code>. Bước 1%, tối đa +100%.</div>
+      <div class="qh-aa-note">Thang 50–300%. 100% = kích thước mặc định của trang.</div>
     `;
     document.documentElement.appendChild($panel);
 
@@ -97,21 +105,22 @@
     $enable = $panel.querySelector('#qh-aa-enable');
 
     $range.addEventListener('input', () => {
-      state.adjPct = clamp(parseInt($range.value||'0',10), 0, 100);
-      $out.textContent = state.adjPct;
+      state.scalePct = clamp(parseInt($range.value||'100',10), 50, 300);
+      $out.textContent = state.scalePct;
       save(); apply();
     });
     $panel.querySelectorAll('.qh-aa-btn2[data-delta]').forEach(b=>{
       b.onclick = ()=> {
         const d = b.getAttribute('data-delta') === '+1' ? 1 : -1;
-        state.adjPct = clamp(state.adjPct + d, 0, 100);
-        $range.value = state.adjPct; $out.textContent = state.adjPct;
+        state.scalePct = clamp(state.scalePct + d, 50, 300);
+        $range.value = state.scalePct; $out.textContent = state.scalePct;
         save(); apply();
       };
     });
-    $panel.querySelector('.qh-aa-btn2[data-set="0"]').onclick = ()=> {
-      state.adjPct = 0; $range.value = 0; $out.textContent = 0; save(); apply();
+    $panel.querySelector('.qh-aa-btn2[data-set="100"]').onclick = ()=> {
+      state.scalePct = 100; $range.value = 100; $out.textContent = 100; save(); apply();
     };
+
     $enable.onchange = ()=> { state.enabled = !!$enable.checked; save(); apply(); };
 
     // click outside to close
@@ -123,26 +132,25 @@
       document.addEventListener('click', onDocClick, { capture:true, once:true });
     },0);
   }
-
   function closePanel() {
     if ($panel && $panel.isConnected) $panel.remove();
     $panel = $range = $out = $enable = null;
   }
 
-  // ScriptCat menu only
+  // --- ScriptCat menu only ---
   function registerMenu() {
     try {
       GM_registerMenuCommand(`Aa • Mở cài đặt (${HOST})`, openPanel);
-      GM_registerMenuCommand(`Aa • +1%`, () => { state.adjPct = clamp(state.adjPct + 1, 0, 100); save(); apply(); });
-      GM_registerMenuCommand(`Aa • -1%`, () => { state.adjPct = clamp(state.adjPct - 1, 0, 100); save(); apply(); });
-      GM_registerMenuCommand(`Aa • Reset (0%)`, () => { state.adjPct = 0; save(); apply(); });
+      GM_registerMenuCommand(`Aa • +1%`, () => { state.scalePct = clamp(state.scalePct + 1, 50, 300); save(); apply(); });
+      GM_registerMenuCommand(`Aa • -1%`, () => { state.scalePct = clamp(state.scalePct - 1, 50, 300); save(); apply(); });
+      GM_registerMenuCommand(`Aa • Reset 100%`, () => { state.scalePct = 100; save(); apply(); });
       GM_registerMenuCommand(state.enabled ? `Aa • Tắt trên ${HOST}` : `Aa • Bật trên ${HOST}`, () => {
         state.enabled = !state.enabled; save(); apply();
       });
     } catch {}
   }
 
-  // Init
+  // init
   apply();
   registerMenu();
 
