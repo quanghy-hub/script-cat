@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Aa Text
+// @name         Aa Text Size per-site (centered panel, 60–200%)
 // @namespace    qh.textsize.per_site
-// @version      1.8.0
-// @description  Tăng/giảm cỡ chữ THEO TỪNG WEBSITE bằng text-size-adjust. Dải 50–300%. Chỉ hiện cài đặt qua GM_registerMenuCommand.
+// @version      1.9.0
+// @description  Tăng/giảm cỡ CHỮ THEO TỪNG WEBSITE bằng text-size-adjust. Panel 90% chiều ngang, căn giữa. Dải 60–200%. Không có icon nổi.
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
 // @run-at       document-start
@@ -18,14 +18,14 @@
 
   const HOST = location.host.replace(/^www\./, '');
   const KEY  = `qh_ts:${HOST}`;
-  const MIN = 50, MAX = 300, STEP = 1;
+  const MIN = 60, MAX = 200, STEP = 1;
   const DEFAULT = { enabled: true, pct: 100 }; // 100% = mặc định
-  let state = read();
 
+  function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
   function read() {
     try {
       const obj = Object.assign({}, DEFAULT, JSON.parse(GM_getValue(KEY, '{}')));
-      // Tương thích bản cũ: adjPct 0..+100 -> pct 100..200
+      // Tương thích rất cũ: adjPct 0..+100 -> pct 100..200
       if (typeof obj.adjPct === 'number' && !('pct' in obj)) {
         obj.pct = clamp(100 + obj.adjPct, MIN, MAX);
       }
@@ -34,16 +34,20 @@
     } catch { return { ...DEFAULT }; }
   }
   function save() { GM_setValue(KEY, JSON.stringify(state)); }
-  function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
 
-  // CSS và panel không bị phóng theo text-size-adjust
+  let state = read();
+
+  // Áp ngay khi khởi chạy
   GM_addStyle(`
     html{ --qh_ts_value:${state.enabled ? state.pct : 100}% !important; }
     html{ -webkit-text-size-adjust: var(--qh_ts_value) !important; text-size-adjust: var(--qh_ts_value) !important; }
 
+    /* PANEL: căn giữa đáy, ~90% chiều ngang, không bị ảnh hưởng bởi text-size-adjust */
     .qh-aa-panel{
-      position: fixed; inset: auto 12px 12px auto; z-index: 2147483647;
-      width: 460px; padding: 12px; border-radius: 12px;
+      position: fixed; left:50%; bottom:12px; transform: translateX(-50%);
+      z-index: 2147483647;
+      width: min(90vw, 960px);
+      padding: 12px; border-radius: 12px;
       background: rgba(255,255,255,.98); color:#111; border:1px solid rgba(0,0,0,.12);
       box-shadow: 0 8px 32px rgba(0,0,0,.18); font: 500 14px/1.35 system-ui,sans-serif;
       -webkit-text-size-adjust: 100% !important; text-size-adjust: 100% !important;
@@ -51,25 +55,22 @@
     }
     .qh-aa-top{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
     .qh-aa-x{ width:28px; height:28px; border-radius:8px; border:1px solid rgba(0,0,0,.12); background:#fff; cursor:pointer; }
-    .qh-aa-row{ display:flex; align-items:center; gap:10px; margin-top:8px; }
-    .qh-aa-btn2{ padding:6px 10px; border-radius:8px; border:1px solid rgba(0,0,0,.12); background:#fff; font:600 13px/1 system-ui,sans-serif; cursor:pointer; }
+    .qh-aa-row{ display:flex; align-items:center; gap:12px; margin-top:8px; flex-wrap:wrap; }
 
-    /* Thanh trượt dài, cố định kích cỡ theo px */
-    .qh-aa-wrap{ position:relative; width: 380px; height: 40px; }
+    /* Thanh trượt: dài theo panel, cố định chiều cao, mượt mobile */
+    .qh-aa-wrap{ position:relative; flex:1 1 600px; height: 44px; }
     .qh-aa-range{
-      position:absolute; left:0; right:0; top:14px; width:380px; height:28px;
+      position:absolute; left:0; right:0; top:16px; width:100%; height:28px;
       appearance:none; -webkit-appearance:none; background:transparent;
-      touch-action: pan-x; /* mượt trên di động */
+      touch-action: pan-x;
     }
-    /* Track */
     .qh-aa-range::-webkit-slider-runnable-track{
-      height:4px; background: linear-gradient(to right, #4c7cff 0%, #4c7cff var(--fill,0%), rgba(0,0,0,.2) var(--fill,0%), rgba(0,0,0,.2) 100%);
-      border-radius:999px;
+      height:4px; border-radius:999px;
+      background:linear-gradient(to right,#4c7cff 0%, #4c7cff var(--fill,0%), rgba(0,0,0,.2) var(--fill,0%), rgba(0,0,0,.2) 100%);
     }
     .qh-aa-range::-moz-range-track{
-      height:4px; background: rgba(0,0,0,.2); border-radius:999px;
+      height:4px; border-radius:999px; background: rgba(0,0,0,.2);
     }
-    /* Thumb */
     .qh-aa-range::-webkit-slider-thumb{
       -webkit-appearance:none; appearance:none; width:20px; height:20px; border-radius:50%;
       background:#fff; border:1px solid rgba(0,0,0,.25); margin-top:-8px; box-shadow:0 1px 2px rgba(0,0,0,.15);
@@ -79,25 +80,28 @@
       box-shadow:0 1px 2px rgba(0,0,0,.15);
     }
 
-    /* Bong bóng % trên thanh trượt */
+    /* Bubble % trên track */
     .qh-aa-bubble{
       position:absolute; top:-2px; transform:translateX(-50%);
-      padding:2px 6px; border-radius:8px; font-weight:700; font-size:12px; background:#111; color:#fff;
-      pointer-events:none;
+      padding:2px 6px; border-radius:8px; font-weight:700; font-size:12px;
+      background:#111; color:#fff; pointer-events:none; white-space:nowrap;
     }
     .qh-aa-bubble::after{
       content:""; position:absolute; left:50%; transform:translateX(-50%);
       bottom:-5px; border:5px solid transparent; border-top-color:#111;
     }
 
-    .qh-aa-badge{ min-width:72px; text-align:right; font-weight:700; }
-
+    .qh-aa-badge{ min-width:76px; text-align:right; font-weight:700; }
+    .qh-aa-btn2{ padding:6px 10px; border-radius:8px; border:1px solid rgba(0,0,0,.12); background:#fff; font:600 13px/1 system-ui,sans-serif; cursor:pointer; }
     .qh-aa-note{ font-size:12px; color:#555; margin-top:6px; }
+
     @media (prefers-color-scheme: dark){
       .qh-aa-panel{ background: rgba(26,26,26,.98); color:#f1f1f1; border-color: rgba(255,255,255,.12); }
       .qh-aa-x,.qh-aa-btn2{ background:#151515; color:#eee; border-color: rgba(255,255,255,.12); }
       .qh-aa-note{ color:#aaa; }
-      .qh-aa-range::-webkit-slider-runnable-track{ background: linear-gradient(to right, #9bb4ff 0%, #9bb4ff var(--fill,0%), rgba(255,255,255,.2) var(--fill,0%), rgba(255,255,255,.2) 100%); }
+      .qh-aa-range::-webkit-slider-runnable-track{
+        background:linear-gradient(to right,#9bb4ff 0%, #9bb4ff var(--fill,0%), rgba(255,255,255,.2) var(--fill,0%), rgba(255,255,255,.2) 100%);
+      }
       .qh-aa-range::-moz-range-track{ background: rgba(255,255,255,.2); }
       .qh-aa-range::-webkit-slider-thumb{ background:#222; border-color: rgba(255,255,255,.25); }
       .qh-aa-range::-moz-range-thumb{ background:#222; border-color: rgba(255,255,255,.25); }
@@ -105,17 +109,17 @@
   `);
 
   function applyPct(pct) {
+    const val = state.enabled ? pct : 100;
     const root = document.documentElement;
-    root.style.setProperty('--qh_ts_value', (state.enabled ? pct : 100) + '%');
-    root.style.setProperty('text-size-adjust', (state.enabled ? pct : 100) + '%', 'important');
-    root.style.setProperty('-webkit-text-size-adjust', (state.enabled ? pct : 100) + '%', 'important');
+    root.style.setProperty('--qh_ts_value', val + '%');
+    root.style.setProperty('text-size-adjust', val + '%', 'important');
+    root.style.setProperty('-webkit-text-size-adjust', val + '%', 'important');
   }
 
-  // Khởi tạo
   applyPct(state.pct);
 
-  // Panel
-  let $panel, $range, $out, $enable, $bubble, rafId = 0, pendingValue = state.pct, dragging = false;
+  // Panel state
+  let $panel, $range, $out, $enable, $bubble, rafId = 0, pending = state.pct;
 
   function openPanel() {
     closePanel();
@@ -147,79 +151,68 @@
           Bật trên ${HOST}
         </label>
       </div>
-      <div class="qh-aa-note">Phóng CHỮ bằng <code>text-size-adjust</code>. Dải 50–300%, bước 1%.</div>
+      <div class="qh-aa-note">Phóng CHỮ bằng <code>text-size-adjust</code>. Dải 60–200%, bước 1%.</div>
     `;
     document.documentElement.appendChild($panel);
 
+    // refs
     $panel.querySelector('.qh-aa-x').onclick = closePanel;
     $range  = $panel.querySelector('.qh-aa-range');
     $out    = $panel.querySelector('#qh-aa-out');
     $enable = $panel.querySelector('#qh-aa-enable');
     $bubble = $panel.querySelector('#qh-aa-bubble');
 
-    const updateBubble = () => {
-      if (!$range || !$bubble) return;
-      const val = parseInt($range.value,10);
-      const min = parseInt($range.min,10);
-      const max = parseInt($range.max,10);
-      const pct = (val - min) / (max - min);
+    // visuals
+    const thumbPx = 20;
+    const updateVisual = (val) => {
+      if (!$range || !$bubble || !$out) return;
+      const min = +$range.min, max = +$range.max;
+      const pct01 = (val - min) / (max - min);
       const rect = $range.getBoundingClientRect();
-      const thumb = 20; // px
-      const x = pct * (rect.width - thumb) + thumb/2;
+      const x = pct01 * (rect.width - thumbPx) + thumbPx/2;
       $bubble.style.left = x + 'px';
       $bubble.textContent = val + '%';
-      // tô màu phần đã kéo cho webkit
-      const fill = Math.round(pct * 100);
-      $range.style.setProperty('--fill', fill + '%');
+      $range.style.setProperty('--fill', Math.round(pct01 * 100) + '%');
+      $out.textContent = String(val);
     };
-    const updateOut = (val) => { $out.textContent = String(val); };
 
-    const applyRaf = () => {
+    const schedule = () => {
       if (rafId) return;
       rafId = requestAnimationFrame(() => {
         rafId = 0;
-        applyPct(pendingValue);
-        updateBubble();
-        updateOut(pendingValue);
+        applyPct(pending);
+        updateVisual(pending);
       });
     };
 
-    const commitSave = () => {
-      state.pct = clamp(pendingValue, MIN, MAX);
-      save();
-    };
-
-    // Sự kiện trượt mượt: cập nhật bằng rAF, không ghi storage liên tục
+    // input handlers
     $range.addEventListener('input', () => {
-      pendingValue = clamp(parseInt($range.value||String(DEFAULT.pct),10), MIN, MAX);
-      applyRaf();
+      pending = clamp(+$range.value, MIN, MAX);
+      schedule();
     }, { passive:true });
 
-    $range.addEventListener('pointerdown', () => { dragging = true; }, { passive:true });
-    const endDrag = () => { if (dragging) { dragging = false; commitSave(); } };
-    $range.addEventListener('pointerup', endDrag, { passive:true });
-    $range.addEventListener('pointercancel', endDrag, { passive:true });
-    $range.addEventListener('change', () => { // hỗ trợ bàn phím
-      pendingValue = clamp(parseInt($range.value,10), MIN, MAX);
-      applyRaf();
-      commitSave();
+    const commit = () => { state.pct = pending; save(); };
+    ['change','keyup'].forEach(ev=>{
+      $range.addEventListener(ev, () => { pending = clamp(+$range.value, MIN, MAX); schedule(); commit(); });
     });
 
-    window.addEventListener('resize', updateBubble, { passive:true });
+    window.addEventListener('resize', () => updateVisual(clamp(+$range.value, MIN, MAX)), { passive:true });
 
+    // buttons
     $panel.querySelectorAll('.qh-aa-btn2[data-delta]').forEach(b=>{
       b.onclick = ()=> {
         const d = b.getAttribute('data-delta') === '+1' ? 1 : -1;
-        pendingValue = clamp((parseInt($range.value,10) + d), MIN, MAX);
-        $range.value = String(pendingValue);
-        applyRaf();
-        commitSave();
+        pending = clamp((+$range.value) + d, MIN, MAX);
+        $range.value = String(pending);
+        schedule(); commit();
       };
     });
     $panel.querySelector('.qh-aa-btn2[data-set="100"]').onclick = ()=> {
-      pendingValue = 100; $range.value = '100'; applyRaf(); commitSave();
+      pending = 100; $range.value = '100'; schedule(); commit();
     };
-    $enable.onchange = ()=> { state.enabled = !!$enable.checked; save(); applyPct(pendingValue); updateBubble(); };
+
+    // enable
+    $enable.onchange = ()=> { state.enabled = !!$enable.checked; save(); applyPct(pending); updateVisual(pending); };
 
     // click ngoài để đóng
     setTimeout(()=> {
@@ -230,8 +223,8 @@
       document.addEventListener('click', onDocClick, { capture:true, once:true });
     },0);
 
-    // Khởi tạo vị trí bong bóng + fill
-    updateBubble();
+    // init visuals
+    updateVisual(state.pct);
   }
 
   function closePanel() {
