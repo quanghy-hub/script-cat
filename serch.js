@@ -1,8 +1,8 @@
-// ==UserScript== 
+// ==UserScript==
 // @name         Quick Search
 // @namespace    qsb.search.bubble
-// @version      1.6.0
-// @description  Bôi đen là hiện bong bóng; ảnh: di chuột / giữ lâu / nhấp chuột phải. 8 nhà cung cấp + Copy + Select all + Cài đặt + Tải ảnh.
+// @version      1.6.1
+// @description  Bôi đen: bong bóng 10 icon (8 nhà cung cấp + Copy + Select all). Ảnh: di chuột/ấn lâu/chuột phải hiện 3 icon (Tải, Copy URL, Tìm ảnh). Không có icon Cài đặt trên bong bóng; chỉ mở cài đặt qua menu ScriptCat.
 // @match        *://*/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/serch.js
 // @downloadURL  https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/serch.js
@@ -117,7 +117,7 @@
       background:#101114;color:#fff;border:1px solid #2a2d33;border-radius:12px;
       padding:8px 10px 10px 10px; box-shadow:0 8px 22px rgba(0,0,0,.28)
     }
-    .qsb-icons{ display:grid; grid-template-columns: repeat(5, 32px); grid-auto-rows:32px; gap:8px; }
+    .qsb-icons{ display:grid; grid-auto-rows:32px; gap:8px; }
     .qsb-item{ width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid transparent; user-select:none }
     .qsb-item:hover{ background:#1b1e24;border-color:#2d3138 }
     .qsb-item img{ width:18px;height:18px; object-fit:contain }
@@ -172,95 +172,111 @@
     setTimeout(()=>el.remove(), 1200);
   }
 
+  // helper: tìm provider dùng {{img}} cho “Tìm ảnh”
+  function findImageSearchProvider() {
+    const p = getProviders();
+    const byName = p.find(x => /bằng ảnh/i.test(x.name||''));
+    if (byName) return byName;
+    const byTpl = p.find(x => /\{\{img\}\}/.test(x.url||''));
+    if (byTpl) return byTpl;
+    return { name: 'Bằng ảnh', url: 'https://www.google.com/searchbyimage?image_url={{img}}', icon: 'https://www.google.com/favicon.ico' };
+  }
+
   function buildBubble(ctx){
     ensureBubble();
     iconGrid.innerHTML = '';
     const providers = getProviders();
     const { from, to } = getCfg();
 
-    // Copy
-    const copyBtn = document.createElement('div');
-    copyBtn.className = 'qsb-item';
-    copyBtn.title = 'Copy';
-    copyBtn.innerHTML = `<span class="glyph">⧉</span>`;
-    copyBtn.addEventListener('click', async (e)=>{
-      e.preventDefault(); e.stopPropagation();
-      const txt = ctx.type==='text' ? String(ctx.text||'') : String(ctx.img||'');
-      if (!txt) return;
-      const ok = await copyText(txt);
-      hideBubble();
-      toast(ok ? 'Đã copy' : 'Copy lỗi', ctx.x, ctx.y);
-    });
-    iconGrid.appendChild(copyBtn);
+    const items = [];
 
-    // Select all
-    const selAllBtn = document.createElement('div');
-    selAllBtn.className = 'qsb-item';
-    selAllBtn.title = 'Select all';
-    selAllBtn.innerHTML = `<span class="glyph">⤢</span>`;
-    selAllBtn.addEventListener('click', (e)=>{
-      e.preventDefault(); e.stopPropagation();
-      const ok = selectAllSmart();
-      toast(ok ? 'Đã chọn hết' : 'Không chọn được', ctx.x, ctx.y);
-    });
-    iconGrid.appendChild(selAllBtn);
+    if (ctx.type === 'text') {
+      // 10 icon: Copy + Select all + 8 providers
+      items.push({
+        title: 'Copy',
+        html: `<span class="glyph">⧉</span>`,
+        onClick: async () => {
+          const ok = await copyText(String(ctx.text||''));
+          hideBubble();
+          toast(ok ? 'Đã copy' : 'Copy lỗi', ctx.x, ctx.y);
+        }
+      });
+      items.push({
+        title: 'Select all',
+        html: `<span class="glyph">⤢</span>`,
+        onClick: () => {
+          const ok = selectAllSmart();
+          toast(ok ? 'Đã chọn hết' : 'Không chọn được', ctx.x, ctx.y);
+        }
+      });
+      providers.forEach((p)=>{
+        items.push({
+          title: p.name || '',
+          html: p.icon ? `<img src="${p.icon}" alt="${p.name||''}">` : `<span class="glyph">🔗</span>`,
+          onClick: () => {
+            const q  = escQ(ctx.text);
+            const u  = (p.url||'')
+              .replaceAll('{{q}}', q)
+              .replaceAll('{{img}}', '')
+              .replaceAll('{{from}}', encodeURIComponent(from))
+              .replaceAll('{{to}}',   encodeURIComponent(to));
+            if (u) GM_openInTab(u, {active:true, insert:true, setParent:true});
+            hideBubble();
+          }
+        });
+      });
+    } else if (ctx.type === 'image') {
+      // 3 icon: Tải, Copy URL, Tìm ảnh
+      const imgProv = findImageSearchProvider();
+      items.push({
+        title: 'Tải ảnh',
+        html: `<span class="glyph">⬇</span>`,
+        onClick: () => {
+          const ok = downloadImage(ctx.img);
+          hideBubble();
+          toast(ok ? 'Đang tải / mở ảnh' : 'Mở ảnh để lưu', ctx.x, ctx.y);
+        }
+      });
+      items.push({
+        title: 'Copy URL',
+        html: `<span class="glyph">⧉</span>`,
+        onClick: async () => {
+          const ok = await copyText(String(ctx.img||''));
+          hideBubble();
+          toast(ok ? 'Đã copy URL' : 'Copy lỗi', ctx.x, ctx.y);
+        }
+      });
+      items.push({
+        title: imgProv.name || 'Tìm ảnh',
+        html: imgProv.icon ? `<img src="${imgProv.icon}" alt="${imgProv.name||''}">` : `<span class="glyph">🔗</span>`,
+        onClick: () => {
+          const im = encodeURIComponent(ctx.img);
+          const u  = (imgProv.url||'')
+            .replaceAll('{{q}}', '')
+            .replaceAll('{{img}}', im)
+            .replaceAll('{{from}}', encodeURIComponent(from))
+            .replaceAll('{{to}}',   encodeURIComponent(to));
+          if (u) GM_openInTab(u, {active:true, insert:true, setParent:true});
+          hideBubble();
+        }
+      });
+    }
 
-    // Providers (8)
-    providers.forEach((p)=>{
+    // render items
+    const cols = Math.min(5, Math.max(1, items.length));
+    iconGrid.style.gridTemplateColumns = `repeat(${cols}, 32px)`;
+    items.forEach(it => {
       const btn = document.createElement('div');
       btn.className = 'qsb-item';
-      btn.title = p.name || '';
-      if (p.icon) {
-        const img = document.createElement('img');
-        img.src = p.icon; img.alt = p.name || '';
-        btn.appendChild(img);
-      } else {
-        const sp = document.createElement('span');
-        sp.className = 'glyph'; sp.textContent = '🔗';
-        btn.appendChild(sp);
-      }
-      btn.addEventListener('click', (e)=>{
-        e.preventDefault(); e.stopPropagation();
-        const q = ctx.type==='text'  ? escQ(ctx.text) : '';
-        const im= ctx.type==='image' ? encodeURIComponent(ctx.img) : '';
-        let target = (p.url||'')
-          .replaceAll('{{q}}', q)
-          .replaceAll('{{img}}', im)
-          .replaceAll('{{from}}', encodeURIComponent(from))
-          .replaceAll('{{to}}', encodeURIComponent(to));
-        if (target) GM_openInTab(target, {active:true, insert:true, setParent:true});
-        hideBubble();
-      });
+      btn.title = it.title || '';
+      btn.innerHTML = it.html;
+      btn.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); it.onClick?.(); });
       iconGrid.appendChild(btn);
     });
-
-    // Cài đặt
-    const setBtn = document.createElement('div');
-    setBtn.className = 'qsb-item';
-    setBtn.title = 'Cài đặt';
-    setBtn.innerHTML = `<span class="glyph">⚙︎</span>`;
-    setBtn.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); openSettings(); });
-    iconGrid.appendChild(setBtn);
-
-    // Tải ảnh (ảnh)
-    if (ctx.type === 'image') {
-      const dlBtn = document.createElement('div');
-      dlBtn.className = 'qsb-item';
-      dlBtn.title = 'Tải ảnh';
-      dlBtn.innerHTML = `<span class="glyph">⬇</span>`;
-      dlBtn.addEventListener('click', (e)=>{
-        e.preventDefault(); e.stopPropagation();
-        const ok = downloadImage(ctx.img);
-        hideBubble();
-        toast(ok ? 'Đang tải / mở ảnh' : 'Mở ảnh để lưu', ctx.x, ctx.y);
-      });
-      iconGrid.appendChild(dlBtn);
-    }
   }
 
   function placeAndShow(x,y){
     ensureBubble();
-    // đo kích thước để tránh clamp sai và tránh nhảy
     bubble.style.visibility = 'hidden';
     bubble.style.display = 'inline-block';
     const w = bubble.offsetWidth || 0;
@@ -297,14 +313,14 @@
   // helper: tìm IMG thật, loại trừ phần tử trong bubble để tránh nhảy
   const getImgFromTarget = (t) => {
     if (!(t instanceof Element)) return null;
-    if (t.closest('.qsb-bubble')) return null; // FIX: đừng bắt IMG trong bubble
+    if (t.closest('.qsb-bubble')) return null;
     if (t.tagName === 'IMG') return t;
     const pic = t.closest('picture');
     if (pic && !pic.closest('.qsb-bubble')) return pic.querySelector('img');
     return null;
   };
 
-  // context menu trên ảnh (loại trừ bubble)
+  // context menu trên ảnh
   document.addEventListener('contextmenu', (ev)=>{
     if (ev.target instanceof Element && ev.target.closest('.qsb-bubble')) return;
     const img = getImgFromTarget(ev.target);
@@ -317,7 +333,7 @@
     placeAndShow(lastCtx.x, lastCtx.y);
   }, {capture:true});
 
-  // long-press trên ảnh (loại trừ bubble)
+  // long-press trên ảnh
   (function enableImageLongPress(){
     let pressTimer = null, startX=0, startY=0, targetImg=null;
     const HOLD_MS = 450, MOVE_CANCEL_PX = 6;
@@ -357,10 +373,10 @@
     document.addEventListener('scroll', onUpOrCancel, {passive:true, capture:true});
   })();
 
-  // hover chuột lên ảnh → hiện menu (desktop). Loại trừ bubble.
+  // hover chuột lên ảnh
   document.addEventListener('pointerenter', (ev)=>{
     if (ev.pointerType !== 'mouse') return;
-    if (ev.target instanceof Element && ev.target.closest('.qsb-bubble')) return; // FIX
+    if (ev.target instanceof Element && ev.target.closest('.qsb-bubble')) return;
     const img = getImgFromTarget(ev.target);
     if (!img) return;
     hoverImgEl = img;
@@ -395,6 +411,7 @@
   addEventListener('resize', hideBubble, {passive:true});
   document.addEventListener('keydown', (e)=>{ if (e.key==='Escape') hideBubble(); }, true);
 
+  // Cài đặt chỉ qua menu
   function openSettings(){
     const providers = getProviders();
     const cfg = getCfg();
