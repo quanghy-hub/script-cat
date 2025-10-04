@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Gestures (Mobile-safe, tunable timings)
+// @name         Gestures — triple tap & double RC to close
 // @namespace    https://github.com/yourname/vm-unified-gestures-open-tab
-// @version      1.3.0
-// @description  Long-press mở link; right-click mở tab; double right-click đóng; double tap đóng tab. Cài đặt thời gian trong menu. Chống long-press mở 2 tab.
+// @version      1.5.0
+// @description  Long-press mở link; right-click mở tab; TRIPLE tap đóng tab; DOUBLE right-click đóng tab. Cài đặt thời gian trong menu. Chống long-press mở 2 tab.
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
 // @run-at       document-start
@@ -29,7 +29,7 @@
     window.__GESTURES_GUARD_LISTENERS__ = true;
     const eat = (ev) => {
       if (Date.now() <= G.killUntil) {
-        ev.preventDefault(); ev.stopImmediatePropagation(); ev.stopPropagation();
+        ev.preventDefault(); ev.stopPropagation();
       }
     };
     addEventListener('click', eat, true);
@@ -43,13 +43,14 @@
   'use strict';
   const G = window.__GESTURES_GUARD__;
 
-  const STORE_KEY = 'vmug_cfg_min_v130';
+  const STORE_KEY = 'vmug_cfg_v150';
   const DEFAULTS = {
     lpress: { enabled: true,  mode: 'bg', longMs: 500, tapTol: 24 }, // px
     rclick: { enabled: true,  mode: 'bg' },
-    dblMs: 250,         // double-tap 1 ngón (90–120 Hz: ~230–260)
-    mtWindowMs: 100,    // cửa sổ “đồng thời” đa ngón
-    mtGuardMs: 450      // khóa đóng sau khi nghi đa ngón
+    dblRightMs: 260,     // double right-click window
+    triTapMs: 330,       // triple tap window
+    mtWindowMs: 100,     // multi-touch simultaneity window
+    mtGuardMs: 450       // guard after suspected multi-touch
   };
 
   const deepClone = (o) => JSON.parse(JSON.stringify(o));
@@ -61,10 +62,10 @@
       return Object.assign(deepClone(DEFAULTS), parsed);
     } catch { return deepClone(DEFAULTS); }
   };
-  const saveCfg = () => { try { GM_setValue(STORE_KEY, CFG); } catch {} };
+  const saveCfg = () => { try { GM_setValue(STORE_KEY, JSON.stringify(CFG)); } catch {} };
   let CFG = loadCfg();
 
-  // ===== Quick Menu: bật/tắt và chỉnh thời gian =====
+  // ===== Menu =====
   GM_registerMenuCommand?.(`⚙️ Long-press: ${CFG.lpress.enabled ? 'On' : 'Off'} • ${CFG.lpress.mode.toUpperCase()}`, () => {
     const on = confirm('Bật long-press mở link? OK=On, Cancel=Off');
     CFG.lpress.enabled = on;
@@ -77,9 +78,19 @@
     saveCfg(); alert('Saved.');
   });
 
-  GM_registerMenuCommand?.(`🕒 Double-tap (ms): ${CFG.dblMs}`, () => {
-    const v = Number(prompt('Khoảng double-tap 1 ngón (ms):', String(CFG.dblMs)));
-    if (Number.isFinite(v) && v >= 160 && v <= 400) { CFG.dblMs = v; saveCfg(); alert('Saved.'); }
+  GM_registerMenuCommand?.(`🖱️ Double right-click (ms): ${CFG.dblRightMs}`, () => {
+    const v = Number(prompt('Khoảng thời gian double right-click (ms):', String(CFG.dblRightMs)));
+    if (Number.isFinite(v) && v >= 160 && v <= 450) { CFG.dblRightMs = v; saveCfg(); alert('Saved.'); }
+  });
+
+  GM_registerMenuCommand?.(`👆 Triple tap (ms): ${CFG.triTapMs}`, () => {
+    const v = Number(prompt('Khoảng thời gian triple tap (ms):', String(CFG.triTapMs)));
+    if (Number.isFinite(v) && v >= 200 && v <= 600) { CFG.triTapMs = v; saveCfg(); alert('Saved.'); }
+  });
+
+  GM_registerMenuCommand?.(`🎯 Tap tolerance (px): ${CFG.lpress.tapTol}`, () => {
+    const v = Number(prompt('Dung sai vị trí (px):', String(CFG.lpress.tapTol)));
+    if (Number.isFinite(v) && v >= 8 && v <= 48) { CFG.lpress.tapTol = v; saveCfg(); alert('Saved.'); }
   });
 
   GM_registerMenuCommand?.(`🖐️ Multi-touch window (ms): ${CFG.mtWindowMs}`, () => {
@@ -90,11 +101,6 @@
   GM_registerMenuCommand?.(`🔒 Multi-touch guard (ms): ${CFG.mtGuardMs}`, () => {
     const v = Number(prompt('Khóa sau khi nghi đa ngón (ms):', String(CFG.mtGuardMs)));
     if (Number.isFinite(v) && v >= 300 && v <= 800) { CFG.mtGuardMs = v; saveCfg(); alert('Saved.'); }
-  });
-
-  GM_registerMenuCommand?.(`🎯 Tap tolerance (px): ${CFG.lpress.tapTol}`, () => {
-    const v = Number(prompt('Dung sai vị trí (px):', String(CFG.lpress.tapTol)));
-    if (Number.isFinite(v) && v >= 8 && v <= 48) { CFG.lpress.tapTol = v; saveCfg(); alert('Saved.'); }
   });
 
   GM_registerMenuCommand?.(`🖱️ Right-click open: ${CFG.rclick.enabled ? 'On' : 'Off'} • ${CFG.rclick.mode.toUpperCase()}`, () => {
@@ -137,10 +143,10 @@
     blockNextContextmenuUntil = Date.now() + 600;
   }
 
-  // ===== State để chống “2 tab” do long-press → contextmenu =====
+  // ===== State =====
   let blockNextContextmenuUntil = 0;
   let lastPointerType = 'mouse';
-  let lpFiredAt = 0; // mốc mở tab bằng long-press
+  let lpFiredAt = 0;
 
   addEventListener('pointerdown', (ev) => { lastPointerType = ev.pointerType || 'mouse'; }, true);
 
@@ -164,7 +170,6 @@
       lpFired = true;
       lpFiredAt = Date.now();
       openByMode(lpAnchor.href, CFG.lpress.mode);
-      // khóa mọi contextmenu sau đó để không mở lần 2
       G.suppress(2000);
       blockNextContextmenuUntil = Date.now() + 2000;
     }, CFG.lpress.longMs);
@@ -179,7 +184,7 @@
   function endLP(ev){
     if (lpTimer){ clearTimeout(lpTimer); lpTimer=null; }
     if (lpFired){
-      ev.preventDefault?.(); ev.stopImmediatePropagation?.(); ev.stopPropagation?.();
+      ev.preventDefault?.(); ev.stopPropagation?.();
       G.suppress(1200);
       blockNextContextmenuUntil = Date.now() + 1200;
     }
@@ -194,20 +199,22 @@
     if (!CFG.rclick.enabled) return;
     const a = getAnchorFromEvent(ev);
     if (!validLink(a)) return;
-    ev.preventDefault(); ev.stopImmediatePropagation(); ev.stopPropagation();
+    // Không stopImmediatePropagation để chuỗi double RC vẫn bắt được
+    ev.preventDefault(); ev.stopPropagation();
   }, true);
 
-  /* ===== Double RIGHT click → CLOSE TAB ===== */
+  /* ===== DOUBLE RIGHT click → CLOSE TAB ===== */
   let lastRTime = 0, lastRX = 0, lastRY = 0;
   addEventListener('mousedown', (ev) => {
     if (ev.button !== 2) return;
     if (inEditable(ev.target)) return;
+
     const now = Date.now();
-    const closeTime = (now - lastRTime) <= CFG.dblMs;
+    const closeTime = (now - lastRTime) <= CFG.dblRightMs;
     const closeSpace = Math.hypot(ev.clientX - lastRX, ev.clientY - lastRY) <= CFG.lpress.tapTol;
 
     if (closeTime && closeSpace) {
-      ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
+      ev.preventDefault(); ev.stopPropagation();
       blockNextContextmenuUntil = now + 600;
       lastRTime = 0;
       closeTabSafe();
@@ -216,52 +223,41 @@
     lastRTime = now; lastRX = ev.clientX; lastRY = ev.clientY;
   }, true);
 
-  /* ===== Right-click (contextmenu) → OPEN NEW TAB =====
-     Chỉ mở khi nguồn là chuột. Nếu là touch (long-press) hoặc vừa long-press xong → KHÔNG mở. */
+  /* ===== Right-click (contextmenu) → OPEN NEW TAB ===== */
   addEventListener('contextmenu', (ev) => {
     if (!CFG.rclick.enabled) return;
 
     const now = Date.now();
-    // 1) Nếu vừa long-press mở tab trong 800 ms → chặn tuyệt đối
-    if (now - lpFiredAt <= 800) {
-      ev.preventDefault(); ev.stopImmediatePropagation(); ev.stopPropagation();
-      return;
-    }
-    // 2) Guard chung
-    if (now <= blockNextContextmenuUntil) {
-      ev.preventDefault(); ev.stopImmediatePropagation(); ev.stopPropagation();
-      return;
-    }
-    // 3) Chỉ xử lý nếu nguồn là chuột
-    if (lastPointerType !== 'mouse') {
-      ev.preventDefault(); ev.stopImmediatePropagation(); ev.stopPropagation();
-      return;
-    }
+    if (now - lpFiredAt <= 800) { ev.preventDefault(); ev.stopPropagation(); return; }
+    if (now <= blockNextContextmenuUntil) { ev.preventDefault(); ev.stopPropagation(); return; }
+    if (lastPointerType !== 'mouse') { ev.preventDefault(); ev.stopPropagation(); return; }
+
     const a = getAnchorFromEvent(ev);
-    if (!validLink(a)) return; // cho menu mặc định nếu không phải link
-    ev.preventDefault(); ev.stopImmediatePropagation(); ev.stopPropagation();
+    if (!validLink(a)) return; // để menu mặc định nếu không phải link
+    ev.preventDefault(); ev.stopPropagation();
     openByMode(a.href, CFG.rclick.mode);
     blockNextContextmenuUntil = now + 600;
   }, true);
 
-  /* ===== Double TAP (touch) → CLOSE TAB, guard đa-ngón ===== */
-  let lastTouchT = 0, lastTX = 0, lastTY = 0;
+  /* ===== TRIPLE TAP (touch) → CLOSE TAB ===== */
   let mtLastFirstT = 0, mtLastFirstX = 0, mtLastFirstY = 0;
   let multiTouchGuardUntil = 0;
+  let tapSeq = []; // [{t,x,y}]
 
   addEventListener('touchstart', (ev) => {
     if (inEditable(ev.target)) return;
-
     const now = Date.now();
-    const t = ev.touches?.[0]; if (!t) return;
 
+    // multi-touch guard
     if (now <= multiTouchGuardUntil) return;
-
     if (ev.touches.length >= 2) {
       multiTouchGuardUntil = now + CFG.mtGuardMs;
       return;
     }
 
+    const t = ev.touches?.[0]; if (!t) return;
+
+    // window for "simultaneous" checker
     if ((now - mtLastFirstT) <= CFG.mtWindowMs) {
       const d = Math.hypot(t.clientX - mtLastFirstX, t.clientY - mtLastFirstY);
       if (d > CFG.lpress.tapTol) {
@@ -269,20 +265,22 @@
         return;
       }
     }
-
     mtLastFirstT = now; mtLastFirstX = t.clientX; mtLastFirstY = t.clientY;
 
-    const closeTimeOk = (now - lastTouchT) <= CFG.dblMs;
-    const closeSpace = Math.hypot(t.clientX - lastTX, t.clientY - lastTY) <= CFG.lpress.tapTol;
-
-    if (closeTimeOk && closeSpace && now > multiTouchGuardUntil) {
-      ev.preventDefault(); ev.stopPropagation();
-      lastTouchT = 0;
-      closeTabSafe();
-      return;
+    // maintain triple-tap buffer
+    tapSeq = tapSeq.filter(c => now - c.t <= CFG.triTapMs);
+    if (tapSeq.length > 0) {
+      const d0 = Math.hypot(t.clientX - tapSeq[0].x, t.clientY - tapSeq[0].y);
+      if (d0 > CFG.lpress.tapTol) tapSeq = [];
     }
 
-    lastTouchT = now; lastTX = t.clientX; lastTY = t.clientY;
+    tapSeq.push({ t: now, x: t.clientX, y: t.clientY });
+
+    if (tapSeq.length >= 3) {
+      ev.preventDefault(); ev.stopPropagation();
+      tapSeq = [];
+      closeTabSafe();
+    }
   }, { capture:true, passive:false });
 
 })();
