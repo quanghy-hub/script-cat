@@ -47,8 +47,8 @@
   const DEFAULTS = {
     lpress: { enabled: true,  mode: 'bg', longMs: 500, tapTol: 24 }, // px
     rclick: { enabled: true,  mode: 'bg' },
-    dblRightMs: 260,   // double right-click window
-    triTapMs: 330      // triple tap window (first → third)
+    dblRightMs: 500,   // double right-click window
+    triTapMs: 900      // triple tap window (first → third)
   };
 
   const deepClone = (o) => JSON.parse(JSON.stringify(o));
