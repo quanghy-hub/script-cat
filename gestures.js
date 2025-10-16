@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Gestures
+// @name         Gestures — long-press open / triple tap & dbl-RC close
 // @namespace    https://github.com/yourname/vm-unified-gestures-open-tab
-// @version      1.6.0
-// @description  Long-press mở link; long-press vùng không phải link thì đóng tab; TRIPLE tap đóng tab; DOUBLE right-click đóng tab; right-click mở tab. Chỉnh được thời gian long-press và triple-tap.
+// @version      1.6.2
+// @description  Long-press chỉ mở link; TRIPLE tap đóng tab; DOUBLE right-click đóng tab; right-click mở tab. Chỉnh được thời gian long-press và triple-tap.
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
 // @run-at       document-start
@@ -46,63 +46,52 @@
   'use strict';
   const G = window.__GESTURES_GUARD__;
 
-  // bump key for 1.6.1 to force 1-time migrate
-  const STORE_KEY = 'vmug_cfg_v161';
+  // bump key for 1.6.2
+  const STORE_KEY = 'vmug_cfg_v162';
   const DEFAULTS = {
     lpress: { enabled: true,  mode: 'bg', longMs: 500, tapTol: 24 }, // px
     rclick: { enabled: true,  mode: 'bg' },
-    dblRightMs: 500,     // double right-click window
+    dblRightMs: 500s,     // double right-click window
     triTapMs: 1000        // triple tap window
-};
-  const deepClone = (o) => JSON.parse(JSON.stringify(o));
-  // old keys for migration
-  const OLD_KEYS = ['vmug_cfg_v160', 'vmug_cfg_v159', 'vmug_cfg'];
-  function mergeIntoDefaults(obj) {
-    return Object.assign(deepClone(DEFAULTS), obj || {});
-  }
-  function tryParseJSON(s) {
-    try { return JSON.parse(s); } catch { return null; }
-  }
+  };
 
-  function migrateOld() {
-    for (const k of OLD_KEYS) {
-      try {
+  const deepClone = (o) => JSON.parse(JSON.stringify(o));
+  const OLD_KEYS = ['vmug_cfg_v161','vmug_cfg_v160','vmug_cfg_v159','vmug_cfg'];
+
+  function mergeIntoDefaults(obj){ return Object.assign(deepClone(DEFAULTS), obj || {}); }
+  function tryParseJSON(s){ try { return JSON.parse(s); } catch { return null; } }
+
+  function migrateOld(){
+    for (const k of OLD_KEYS){
+      try{
         const v = GM_getValue(k);
         if (!v) continue;
         let parsed = v;
         if (typeof v === 'string') parsed = tryParseJSON(v);
-        if (parsed && typeof parsed === 'object') {
-          return mergeIntoDefaults(parsed);
-        }
-      } catch {}
+        if (parsed && typeof parsed === 'object') return mergeIntoDefaults(parsed);
+      }catch{}
     }
     return null;
   }
 
-  function loadCfg() {
-    try {
+  function loadCfg(){
+    try{
       const v = GM_getValue(STORE_KEY);
-      if (v == null) {
+      if (v == null){
         const mig = migrateOld();
         return mig ? mig : deepClone(DEFAULTS);
       }
-      if (typeof v === 'string') {
+      if (typeof v === 'string'){
         const p = tryParseJSON(v);
         if (p && typeof p === 'object') return mergeIntoDefaults(p);
-        // string but not JSON → ignore
         return deepClone(DEFAULTS);
       }
       if (typeof v === 'object') return mergeIntoDefaults(v);
-    } catch {}
+    }catch{}
     return deepClone(DEFAULTS);
   }
 
-  function saveCfg() {
-    try {
-      // ScriptCat supports storing objects; no stringify needed
-      GM_setValue(STORE_KEY, CFG);
-    } catch {}
-  }
+  function saveCfg(){ try { GM_setValue(STORE_KEY, CFG); } catch {} }
 
   let CFG = loadCfg();
 
@@ -181,8 +170,8 @@
 
   addEventListener('pointerdown', (ev) => { lastPointerType = ev.pointerType || 'mouse'; }, true);
 
-  /* ===== Long-press: LINK → open; NON-LINK → close ===== */
-  let lpDownX=0, lpDownY=0, lpAnchor=null, lpMoved=false, lpTimer=null, lpFired=false, lpIsNonLink=false;
+  /* ===== Long-press: CHỈ mở LINK ===== */
+  let lpDownX=0, lpDownY=0, lpAnchor=null, lpMoved=false, lpTimer=null, lpFired=false;
 
   addEventListener('pointerdown', (ev) => {
     if (!CFG.lpress.enabled) return;
@@ -191,10 +180,10 @@
 
     const a = getAnchorFromEvent(ev);
     const onLink = validLink(a);
+    if (!onLink) return; // ← bỏ hoàn toàn hành vi “giữ lâu vùng trống để đóng tab”
 
     lpDownX = ev.clientX; lpDownY = ev.clientY;
-    lpAnchor = onLink ? a : null;
-    lpIsNonLink = !onLink;
+    lpAnchor = a;
     lpMoved = false; lpFired = false;
 
     clearTimeout(lpTimer);
@@ -202,13 +191,9 @@
       if (lpMoved) return;
       lpFired = true;
       lpFiredAt = Date.now();
-      if (lpAnchor) {
-        openByMode(lpAnchor.href, CFG.lpress.mode);        // giữ lâu trên link → mở tab
-        G.suppress(2000);
-        blockNextContextmenuUntil = Date.now() + 2000;
-      } else if (lpIsNonLink) {
-        closeTabSafe();                                     // giữ lâu không phải link → đóng tab
-      }
+      openByMode(lpAnchor.href, CFG.lpress.mode);        // giữ lâu trên link → mở tab
+      G.suppress(2000);
+      blockNextContextmenuUntil = Date.now() + 2000;
     }, CFG.lpress.longMs);
   }, true);
 
@@ -225,7 +210,7 @@
       G.suppress(1200);
       blockNextContextmenuUntil = Date.now() + 1200;
     }
-    lpAnchor=null; lpFired=false; lpIsNonLink=false;
+    lpAnchor=null; lpFired=false;
   }
   addEventListener('pointerup', endLP, {capture:true, passive:false});
   addEventListener('pointercancel', endLP, {capture:true, passive:false});
