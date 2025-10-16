@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Gestures — long-press open / triple tap & dbl-RC close
+// @name         Gestures
 // @namespace    https://github.com/yourname/vm-unified-gestures-open-tab
 // @version      1.6.2
-// @description  Long-press chỉ mở link; TRIPLE tap đóng tab; DOUBLE right-click đóng tab; right-click mở tab. Chỉnh được thời gian long-press và triple-tap.
+// @description  Long-press CHỈ mở link; TRIPLE tap đóng tab; DOUBLE right-click đóng tab; right-click mở tab. Chỉnh được thời gian long-press và triple-tap.
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
 // @run-at       document-start
@@ -46,52 +46,58 @@
   'use strict';
   const G = window.__GESTURES_GUARD__;
 
-  // bump key for 1.6.2
+  // bump key for 1.6.2 to force 1-time migrate if needed
   const STORE_KEY = 'vmug_cfg_v162';
   const DEFAULTS = {
     lpress: { enabled: true,  mode: 'bg', longMs: 500, tapTol: 24 }, // px
     rclick: { enabled: true,  mode: 'bg' },
-    dblRightMs: 500s,     // double right-click window
-    triTapMs: 1000        // triple tap window
+    dblRightMs: 260,
+    triTapMs: 330
   };
 
   const deepClone = (o) => JSON.parse(JSON.stringify(o));
-  const OLD_KEYS = ['vmug_cfg_v161','vmug_cfg_v160','vmug_cfg_v159','vmug_cfg'];
 
-  function mergeIntoDefaults(obj){ return Object.assign(deepClone(DEFAULTS), obj || {}); }
-  function tryParseJSON(s){ try { return JSON.parse(s); } catch { return null; } }
+  // old keys for migration
+  const OLD_KEYS = ['vmug_cfg_v161', 'vmug_cfg_v160', 'vmug_cfg_v159', 'vmug_cfg'];
 
-  function migrateOld(){
-    for (const k of OLD_KEYS){
-      try{
+  function mergeIntoDefaults(obj) {
+    return Object.assign(deepClone(DEFAULTS), obj || {});
+  }
+  function tryParseJSON(s) { try { return JSON.parse(s); } catch { return null; } }
+
+  function migrateOld() {
+    for (const k of OLD_KEYS) {
+      try {
         const v = GM_getValue(k);
         if (!v) continue;
         let parsed = v;
         if (typeof v === 'string') parsed = tryParseJSON(v);
         if (parsed && typeof parsed === 'object') return mergeIntoDefaults(parsed);
-      }catch{}
+      } catch {}
     }
     return null;
   }
 
-  function loadCfg(){
-    try{
+  function loadCfg() {
+    try {
       const v = GM_getValue(STORE_KEY);
-      if (v == null){
+      if (v == null) {
         const mig = migrateOld();
         return mig ? mig : deepClone(DEFAULTS);
       }
-      if (typeof v === 'string'){
+      if (typeof v === 'string') {
         const p = tryParseJSON(v);
         if (p && typeof p === 'object') return mergeIntoDefaults(p);
         return deepClone(DEFAULTS);
       }
       if (typeof v === 'object') return mergeIntoDefaults(v);
-    }catch{}
+    } catch {}
     return deepClone(DEFAULTS);
   }
 
-  function saveCfg(){ try { GM_setValue(STORE_KEY, CFG); } catch {} }
+  function saveCfg() {
+    try { GM_setValue(STORE_KEY, CFG); } catch {}
+  }
 
   let CFG = loadCfg();
 
@@ -170,7 +176,7 @@
 
   addEventListener('pointerdown', (ev) => { lastPointerType = ev.pointerType || 'mouse'; }, true);
 
-  /* ===== Long-press: CHỈ mở LINK ===== */
+  /* ===== Long-press: LINK → open (không còn đóng tab khi không phải link) ===== */
   let lpDownX=0, lpDownY=0, lpAnchor=null, lpMoved=false, lpTimer=null, lpFired=false;
 
   addEventListener('pointerdown', (ev) => {
@@ -180,7 +186,10 @@
 
     const a = getAnchorFromEvent(ev);
     const onLink = validLink(a);
-    if (!onLink) return; // ← bỏ hoàn toàn hành vi “giữ lâu vùng trống để đóng tab”
+    if (!onLink) { // không xử lý long-press nếu không phải link
+      lpAnchor = null;
+      return;
+    }
 
     lpDownX = ev.clientX; lpDownY = ev.clientY;
     lpAnchor = a;
@@ -191,7 +200,7 @@
       if (lpMoved) return;
       lpFired = true;
       lpFiredAt = Date.now();
-      openByMode(lpAnchor.href, CFG.lpress.mode);        // giữ lâu trên link → mở tab
+      openByMode(lpAnchor.href, CFG.lpress.mode); // chỉ mở link
       G.suppress(2000);
       blockNextContextmenuUntil = Date.now() + 2000;
     }, CFG.lpress.longMs);
