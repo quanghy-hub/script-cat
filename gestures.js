@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Gestures — triple tap & double RC to close
+// @name         Gestures
 // @namespace    https://github.com/yourname/vm-unified-gestures-open-tab
 // @version      1.6.5
 // @description  Long-press mở link; right-click mở tab; DOUBLE right-click đóng tab; TRIPLE tap (touch) đóng tab.
