@@ -1,12 +1,15 @@
 // ==UserScript==
-// @name         Gestures — triple tap & double RC to close
+// @name         Gestures
 // @namespace    https://github.com/yourname/vm-unified-gestures-open-tab
-// @version      1.5.0
-// @description  Long-press mở link; right-click mở tab; TRIPLE tap đóng tab; DOUBLE right-click đóng tab. Cài đặt thời gian trong menu. Chống long-press mở 2 tab.
+// @version      1.6.0
+// @description  Long-press mở link; long-press vùng không phải link thì đóng tab; TRIPLE tap đóng tab; DOUBLE right-click đóng tab; right-click mở tab. Chỉnh được thời gian long-press và triple-tap.
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
 // @run-at       document-start
+// @early-start
 // @noframes
+// @inject-into  content
+// @storageName  vm-unified-gestures
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/gestures.js
 // @downloadURL  https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/gestures.js
 // @grant        GM_registerMenuCommand
@@ -43,26 +46,64 @@
   'use strict';
   const G = window.__GESTURES_GUARD__;
 
-  const STORE_KEY = 'vmug_cfg_v150';
+  // bump key for 1.6.1 to force 1-time migrate
+  const STORE_KEY = 'vmug_cfg_v161';
   const DEFAULTS = {
     lpress: { enabled: true,  mode: 'bg', longMs: 500, tapTol: 24 }, // px
     rclick: { enabled: true,  mode: 'bg' },
-    dblRightMs: 260,     // double right-click window
-    triTapMs: 330,       // triple tap window
-    mtWindowMs: 100,     // multi-touch simultaneity window
-    mtGuardMs: 450       // guard after suspected multi-touch
-  };
-
+    dblRightMs: 500,     // double right-click window
+    triTapMs: 1000        // triple tap window
+};
   const deepClone = (o) => JSON.parse(JSON.stringify(o));
-  const loadCfg = () => {
+  // old keys for migration
+  const OLD_KEYS = ['vmug_cfg_v160', 'vmug_cfg_v159', 'vmug_cfg'];
+  function mergeIntoDefaults(obj) {
+    return Object.assign(deepClone(DEFAULTS), obj || {});
+  }
+  function tryParseJSON(s) {
+    try { return JSON.parse(s); } catch { return null; }
+  }
+
+  function migrateOld() {
+    for (const k of OLD_KEYS) {
+      try {
+        const v = GM_getValue(k);
+        if (!v) continue;
+        let parsed = v;
+        if (typeof v === 'string') parsed = tryParseJSON(v);
+        if (parsed && typeof parsed === 'object') {
+          return mergeIntoDefaults(parsed);
+        }
+      } catch {}
+    }
+    return null;
+  }
+
+  function loadCfg() {
     try {
-      const raw = GM_getValue(STORE_KEY, '');
-      if (!raw) return deepClone(DEFAULTS);
-      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      return Object.assign(deepClone(DEFAULTS), parsed);
-    } catch { return deepClone(DEFAULTS); }
-  };
-  const saveCfg = () => { try { GM_setValue(STORE_KEY, JSON.stringify(CFG)); } catch {} };
+      const v = GM_getValue(STORE_KEY);
+      if (v == null) {
+        const mig = migrateOld();
+        return mig ? mig : deepClone(DEFAULTS);
+      }
+      if (typeof v === 'string') {
+        const p = tryParseJSON(v);
+        if (p && typeof p === 'object') return mergeIntoDefaults(p);
+        // string but not JSON → ignore
+        return deepClone(DEFAULTS);
+      }
+      if (typeof v === 'object') return mergeIntoDefaults(v);
+    } catch {}
+    return deepClone(DEFAULTS);
+  }
+
+  function saveCfg() {
+    try {
+      // ScriptCat supports storing objects; no stringify needed
+      GM_setValue(STORE_KEY, CFG);
+    } catch {}
+  }
+
   let CFG = loadCfg();
 
   // ===== Menu =====
@@ -70,7 +111,7 @@
     const on = confirm('Bật long-press mở link? OK=On, Cancel=Off');
     CFG.lpress.enabled = on;
     if (on) {
-      const mode = prompt('Mode BG/FG?', CFG.lpress.mode).toLowerCase().startsWith('f') ? 'fg' : 'bg';
+      const mode = (prompt('Mode BG/FG?', CFG.lpress.mode) || '').toLowerCase().startsWith('f') ? 'fg' : 'bg';
       CFG.lpress.mode = mode;
       const ms = Number(prompt('Thời gian giữ (ms ≥ 300):', String(CFG.lpress.longMs)));
       if (Number.isFinite(ms) && ms >= 300) CFG.lpress.longMs = ms;
@@ -80,12 +121,12 @@
 
   GM_registerMenuCommand?.(`🖱️ Double right-click (ms): ${CFG.dblRightMs}`, () => {
     const v = Number(prompt('Khoảng thời gian double right-click (ms):', String(CFG.dblRightMs)));
-    if (Number.isFinite(v) && v >= 160 && v <= 450) { CFG.dblRightMs = v; saveCfg(); alert('Saved.'); }
+    if (Number.isFinite(v) && v >= 160 && v <= 600) { CFG.dblRightMs = v; saveCfg(); alert('Saved.'); }
   });
 
   GM_registerMenuCommand?.(`👆 Triple tap (ms): ${CFG.triTapMs}`, () => {
     const v = Number(prompt('Khoảng thời gian triple tap (ms):', String(CFG.triTapMs)));
-    if (Number.isFinite(v) && v >= 200 && v <= 600) { CFG.triTapMs = v; saveCfg(); alert('Saved.'); }
+    if (Number.isFinite(v) && v >= 200 && v <= 800) { CFG.triTapMs = v; saveCfg(); alert('Saved.'); }
   });
 
   GM_registerMenuCommand?.(`🎯 Tap tolerance (px): ${CFG.lpress.tapTol}`, () => {
@@ -93,21 +134,11 @@
     if (Number.isFinite(v) && v >= 8 && v <= 48) { CFG.lpress.tapTol = v; saveCfg(); alert('Saved.'); }
   });
 
-  GM_registerMenuCommand?.(`🖐️ Multi-touch window (ms): ${CFG.mtWindowMs}`, () => {
-    const v = Number(prompt('Cửa sổ “đồng thời” đa ngón (ms):', String(CFG.mtWindowMs)));
-    if (Number.isFinite(v) && v >= 60 && v <= 200) { CFG.mtWindowMs = v; saveCfg(); alert('Saved.'); }
-  });
-
-  GM_registerMenuCommand?.(`🔒 Multi-touch guard (ms): ${CFG.mtGuardMs}`, () => {
-    const v = Number(prompt('Khóa sau khi nghi đa ngón (ms):', String(CFG.mtGuardMs)));
-    if (Number.isFinite(v) && v >= 300 && v <= 800) { CFG.mtGuardMs = v; saveCfg(); alert('Saved.'); }
-  });
-
   GM_registerMenuCommand?.(`🖱️ Right-click open: ${CFG.rclick.enabled ? 'On' : 'Off'} • ${CFG.rclick.mode.toUpperCase()}`, () => {
     const on = confirm('Bật right-click mở tab mới? OK=On, Cancel=Off');
     CFG.rclick.enabled = on;
     if (on) {
-      const mode = prompt('Mode BG/FG?', CFG.rclick.mode).toLowerCase().startsWith('f') ? 'fg' : 'bg';
+      const mode = (prompt('Mode BG/FG?', CFG.rclick.mode) || '').toLowerCase().startsWith('f') ? 'fg' : 'bg';
       CFG.rclick.mode = mode;
     }
     saveCfg(); alert('Saved.');
@@ -150,8 +181,8 @@
 
   addEventListener('pointerdown', (ev) => { lastPointerType = ev.pointerType || 'mouse'; }, true);
 
-  /* ===== Long-press mở LINK – mouse left + touch ===== */
-  let lpDownX=0, lpDownY=0, lpAnchor=null, lpMoved=false, lpTimer=null, lpFired=false;
+  /* ===== Long-press: LINK → open; NON-LINK → close ===== */
+  let lpDownX=0, lpDownY=0, lpAnchor=null, lpMoved=false, lpTimer=null, lpFired=false, lpIsNonLink=false;
 
   addEventListener('pointerdown', (ev) => {
     if (!CFG.lpress.enabled) return;
@@ -159,24 +190,30 @@
     if (ev.pointerType === 'mouse' && ev.button !== 0) return;
 
     const a = getAnchorFromEvent(ev);
-    if (!validLink(a)) return;
+    const onLink = validLink(a);
 
     lpDownX = ev.clientX; lpDownY = ev.clientY;
-    lpAnchor = a; lpMoved = false; lpFired = false;
+    lpAnchor = onLink ? a : null;
+    lpIsNonLink = !onLink;
+    lpMoved = false; lpFired = false;
 
     clearTimeout(lpTimer);
     lpTimer = setTimeout(() => {
-      if (!lpAnchor || lpMoved) return;
+      if (lpMoved) return;
       lpFired = true;
       lpFiredAt = Date.now();
-      openByMode(lpAnchor.href, CFG.lpress.mode);
-      G.suppress(2000);
-      blockNextContextmenuUntil = Date.now() + 2000;
+      if (lpAnchor) {
+        openByMode(lpAnchor.href, CFG.lpress.mode);        // giữ lâu trên link → mở tab
+        G.suppress(2000);
+        blockNextContextmenuUntil = Date.now() + 2000;
+      } else if (lpIsNonLink) {
+        closeTabSafe();                                     // giữ lâu không phải link → đóng tab
+      }
     }, CFG.lpress.longMs);
   }, true);
 
   addEventListener('pointermove', (ev) => {
-    if (!lpAnchor) return;
+    if (!lpTimer) return;
     const dx=Math.abs(ev.clientX-lpDownX), dy=Math.abs(ev.clientY-lpDownY);
     if (dx > CFG.lpress.tapTol || dy > CFG.lpress.tapTol) { lpMoved = true; clearTimeout(lpTimer); lpTimer=null; }
   }, true);
@@ -188,7 +225,7 @@
       G.suppress(1200);
       blockNextContextmenuUntil = Date.now() + 1200;
     }
-    lpAnchor=null; lpFired=false;
+    lpAnchor=null; lpFired=false; lpIsNonLink=false;
   }
   addEventListener('pointerup', endLP, {capture:true, passive:false});
   addEventListener('pointercancel', endLP, {capture:true, passive:false});
@@ -199,7 +236,6 @@
     if (!CFG.rclick.enabled) return;
     const a = getAnchorFromEvent(ev);
     if (!validLink(a)) return;
-    // Không stopImmediatePropagation để chuỗi double RC vẫn bắt được
     ev.preventDefault(); ev.stopPropagation();
   }, true);
 
@@ -239,46 +275,27 @@
     blockNextContextmenuUntil = now + 600;
   }, true);
 
-  /* ===== TRIPLE TAP (touch) → CLOSE TAB ===== */
-  let mtLastFirstT = 0, mtLastFirstX = 0, mtLastFirstY = 0;
-  let multiTouchGuardUntil = 0;
-  let tapSeq = []; // [{t,x,y}]
-
-  addEventListener('touchstart', (ev) => {
+  /* ===== TRIPLE TAP (touchend-based) → CLOSE TAB ===== */
+  let tSeq = []; // [{t,x,y}]
+  addEventListener('touchend', (ev) => {
     if (inEditable(ev.target)) return;
     const now = Date.now();
+    const touch = (ev.changedTouches && ev.changedTouches[0]);
+    if (!touch) return;
 
-    // multi-touch guard
-    if (now <= multiTouchGuardUntil) return;
-    if (ev.touches.length >= 2) {
-      multiTouchGuardUntil = now + CFG.mtGuardMs;
-      return;
+    // giữ tối đa các tap trong cửa sổ triTapMs
+    tSeq = tSeq.filter(c => now - c.t <= CFG.triTapMs);
+    // nếu khác vị trí quá xa so với tap đầu thì reset cụm
+    if (tSeq.length > 0) {
+      const d0 = Math.hypot(touch.clientX - tSeq[0].x, touch.clientY - tSeq[0].y);
+      if (d0 > CFG.lpress.tapTol) tSeq = [];
     }
 
-    const t = ev.touches?.[0]; if (!t) return;
+    tSeq.push({ t: now, x: touch.clientX, y: touch.clientY });
 
-    // window for "simultaneous" checker
-    if ((now - mtLastFirstT) <= CFG.mtWindowMs) {
-      const d = Math.hypot(t.clientX - mtLastFirstX, t.clientY - mtLastFirstY);
-      if (d > CFG.lpress.tapTol) {
-        multiTouchGuardUntil = now + CFG.mtGuardMs;
-        return;
-      }
-    }
-    mtLastFirstT = now; mtLastFirstX = t.clientX; mtLastFirstY = t.clientY;
-
-    // maintain triple-tap buffer
-    tapSeq = tapSeq.filter(c => now - c.t <= CFG.triTapMs);
-    if (tapSeq.length > 0) {
-      const d0 = Math.hypot(t.clientX - tapSeq[0].x, t.clientY - tapSeq[0].y);
-      if (d0 > CFG.lpress.tapTol) tapSeq = [];
-    }
-
-    tapSeq.push({ t: now, x: t.clientX, y: t.clientY });
-
-    if (tapSeq.length >= 3) {
+    if (tSeq.length >= 3) {
       ev.preventDefault(); ev.stopPropagation();
-      tapSeq = [];
+      tSeq = [];
       closeTabSafe();
     }
   }, { capture:true, passive:false });
