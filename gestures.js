@@ -39,7 +39,7 @@
   const DEFAULTS = {
     lpress:     { enabled:true, mode:'bg', longMs:500, tapTol:24 },
     rclick:     { enabled:true, mode:'fg' },
-    dblRightMs: 600, dblTapMs:   120};
+    dblRightMs: 600, dblTapMs: 260};
   const deepClone=o=>JSON.parse(JSON.stringify(o));
   const loadCfg=()=>{ try{ const raw=GM_getValue(STORE_KEY,''); return raw?Object.assign(deepClone(DEFAULTS), typeof raw==='string'?JSON.parse(raw):raw):deepClone(DEFAULTS);}catch{ return deepClone(DEFAULTS);} };
   const saveCfg=()=>{ try{ GM_setValue(STORE_KEY, JSON.stringify(CFG)); }catch{} };
@@ -247,30 +247,11 @@
         timer: setTimeout(() => {
           if(tf && !tf.movedOrScaled && !tf.scrolled){
             scrollToBottomSmooth();
-            clearTF();
-          }
-        }, TWO_FINGER_HOLD_MS)
-      };
-      return;
-    }
-
-    // nếu thêm bớt ngón → hủy
-    if(tf && ev.touches.length!==2) clearTF();
-  }, {capture:true, passive:true});
-
-  addEventListener('touchmove', ev => {
-    if(!tf) return;
+            clearTF(); }}, TWO_FINGER_HOLD_MS) };
+      return; }
 
     // số ngón phải luôn là 2
     if(ev.touches.length!==2){ clearTF(); return; }
-
-    // phát hiện trang đã cuộn
-    const se = document.scrollingElement||document.documentElement;
-    const nowX = se.scrollLeft || window.pageXOffset || 0;
-    const nowY = se.scrollTop  || window.pageYOffset || 0;
-    if(Math.abs(nowX - tf.sX) > SCROLL_TOL || Math.abs(nowY - tf.sY) > SCROLL_TOL){
-      tf.scrolled = true; clearTF(); return;
-    }
 
     // vị trí hiện tại của 2 id
     const t1 = getTouchById(ev.touches, tf.id1);
