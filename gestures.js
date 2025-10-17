@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gestures
 // @namespace    https://github.com/yourname/vm-unified-gestures-open-tab
-// @version      1.6.8
+// @version      1.6.9
 // @description  Long-press mở link; right-click mở tab; DOUBLE right-click đóng tab; DOUBLE tap (touch) đóng tab; Hai ngón giữ nguyên ≥500ms (không di chuyển/không pinch/không scroll) → đi cuối trang.
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
@@ -39,10 +39,7 @@
   const DEFAULTS = {
     lpress:     { enabled:true, mode:'bg', longMs:500, tapTol:24 },
     rclick:     { enabled:true, mode:'fg' },
-    dblRightMs: 600,
-    dblTapMs:   400
-  };
-
+    dblRightMs: 600, dblTapMs:   120};
   const deepClone=o=>JSON.parse(JSON.stringify(o));
   const loadCfg=()=>{ try{ const raw=GM_getValue(STORE_KEY,''); return raw?Object.assign(deepClone(DEFAULTS), typeof raw==='string'?JSON.parse(raw):raw):deepClone(DEFAULTS);}catch{ return deepClone(DEFAULTS);} };
   const saveCfg=()=>{ try{ GM_setValue(STORE_KEY, JSON.stringify(CFG)); }catch{} };
@@ -71,7 +68,7 @@
   });
   GM_registerMenuCommand?.(`⏱️ Double tap window (ms): ${CFG.dblTapMs}`, () => {
     const v = Number(prompt('Khoảng thời gian double tap (ms):', String(CFG.dblTapMs)));
-    if (Number.isFinite(v) && v>=200 && v<=800){ CFG.dblTapMs=v; saveCfg(); alert('Saved.'); }
+    if (Number.isFinite(v) && v>=100 && v<=800){ CFG.dblTapMs=v; saveCfg(); alert('Saved.'); }
   });
   GM_registerMenuCommand?.(`🎯 Tap tolerance (px): ${CFG.lpress.tapTol}`, () => {
     const v = Number(prompt('Dung sai vị trí (px):', String(CFG.lpress.tapTol)));
