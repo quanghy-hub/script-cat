@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gestures
 // @namespace    https://github.com/yourname/vm-unified-gestures-open-tab
-// @version      1.6.9
+// @version      1.6.93
 // @description  Long-press mở link; right-click mở tab; DOUBLE right-click đóng tab; DOUBLE tap (touch) đóng tab; Hai ngón giữ nguyên ≥500ms (không di chuyển/không pinch/không scroll) → đi cuối trang.
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
