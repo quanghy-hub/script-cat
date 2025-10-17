@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gestures
 // @namespace    https://github.com/yourname/vm-unified-gestures-open-tab
-// @version      1.6.93
+// @version      1.6.95
 // @description  Long-press mở link; right-click mở tab; DOUBLE right-click đóng tab; DOUBLE tap (touch) đóng tab; Hai ngón giữ nguyên ≥500ms (không di chuyển/không pinch/không scroll) → đi cuối trang.
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
@@ -39,7 +39,10 @@
   const DEFAULTS = {
     lpress:     { enabled:true, mode:'bg', longMs:500, tapTol:24 },
     rclick:     { enabled:true, mode:'fg' },
-    dblRightMs: 600, dblTapMs: 260};
+    dblRightMs: 600,
+    dblTapMs:   260
+  };
+
   const deepClone=o=>JSON.parse(JSON.stringify(o));
   const loadCfg=()=>{ try{ const raw=GM_getValue(STORE_KEY,''); return raw?Object.assign(deepClone(DEFAULTS), typeof raw==='string'?JSON.parse(raw):raw):deepClone(DEFAULTS);}catch{ return deepClone(DEFAULTS);} };
   const saveCfg=()=>{ try{ GM_setValue(STORE_KEY, JSON.stringify(CFG)); }catch{} };
@@ -68,7 +71,7 @@
   });
   GM_registerMenuCommand?.(`⏱️ Double tap window (ms): ${CFG.dblTapMs}`, () => {
     const v = Number(prompt('Khoảng thời gian double tap (ms):', String(CFG.dblTapMs)));
-    if (Number.isFinite(v) && v>=100 && v<=800){ CFG.dblTapMs=v; saveCfg(); alert('Saved.'); }
+    if (Number.isFinite(v) && v>=200 && v<=800){ CFG.dblTapMs=v; saveCfg(); alert('Saved.'); }
   });
   GM_registerMenuCommand?.(`🎯 Tap tolerance (px): ${CFG.lpress.tapTol}`, () => {
     const v = Number(prompt('Dung sai vị trí (px):', String(CFG.lpress.tapTol)));
@@ -216,7 +219,7 @@
      - Khoảng cách giữa 2 ngón không đổi trong SCALE_TOL (tránh pinch/zoom).
      - Trang không bị cuộn quá SCROLL_TOL trong thời gian giữ.
      - Không preventDefault → không cản trở pinch/zoom/scroll tự nhiên; chỉ kích hoạt khi thật sự đứng yên. */
-  const TWO_FINGER_HOLD_MS = 800;
+  const TWO_FINGER_HOLD_MS = 500;
   const MOVE_TOL   = 12;  // px: mỗi ngón không được lệch quá mức này
   const SCALE_TOL  = 10;  // px: thay đổi khoảng cách giữa 2 ngón coi như pinch
   const SCROLL_TOL = 2;   // px: nếu trang đã cuộn trong lúc giữ, hủy
@@ -247,11 +250,30 @@
         timer: setTimeout(() => {
           if(tf && !tf.movedOrScaled && !tf.scrolled){
             scrollToBottomSmooth();
-            clearTF(); }}, TWO_FINGER_HOLD_MS) };
-      return; }
+            clearTF();
+          }
+        }, TWO_FINGER_HOLD_MS)
+      };
+      return;
+    }
+
+    // nếu thêm bớt ngón → hủy
+    if(tf && ev.touches.length!==2) clearTF();
+  }, {capture:true, passive:true});
+
+  addEventListener('touchmove', ev => {
+    if(!tf) return;
 
     // số ngón phải luôn là 2
     if(ev.touches.length!==2){ clearTF(); return; }
+
+    // phát hiện trang đã cuộn
+    const se = document.scrollingElement||document.documentElement;
+    const nowX = se.scrollLeft || window.pageXOffset || 0;
+    const nowY = se.scrollTop  || window.pageYOffset || 0;
+    if(Math.abs(nowX - tf.sX) > SCROLL_TOL || Math.abs(nowY - tf.sY) > SCROLL_TOL){
+      tf.scrolled = true; clearTF(); return;
+    }
 
     // vị trí hiện tại của 2 id
     const t1 = getTouchById(ev.touches, tf.id1);
