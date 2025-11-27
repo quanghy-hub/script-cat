@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YouTube
 // @namespace    yt-tools-merged
-// @version      2.3.2
-// @description  Screenshot button + dual subtitles (English + Vietnamese) for YouTube.
+// @version      2.3.3
+// @description  Screenshot button
 // @match        https://www.youtube.com/*
 // @match        https://m.youtube.com/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/yt.js
@@ -18,99 +18,6 @@
 
 /* global xhProxy */
 
-// ---------- Dual Subtitles: Always show EN + VI ----------
-(() => {
-  if (location.pathname === '/live_chat' || location.pathname === '/live_chat_replay') return;
-
-  let requestDeferred = Promise.resolve();
-
-  const inPlaceArrayPush = (() => {
-    const LIMIT_N = typeof AbortSignal !== 'undefined' && typeof (AbortSignal || 0).timeout === 'function' ? 50000 : 10000;
-    return (dest, source) => {
-      let i = 0, len = source.length;
-      while (i < len) {
-        const n = Math.min(LIMIT_N, len - i);
-        dest.push(...source.slice(i, i + n));
-        i += n;
-      }
-    };
-  })();
-
-  const encodeFW = t => t.replace(/\n/g, '\n®\n').replace(/\u3000/g, '\n©\n');
-  const decodeFW = t => t.replace(/\n©\n/g, '\u3000').replace(/\n®\n/g, '\n');
-
-  xhProxy.hook({
-    onConfig(xhr, config) {
-      const u = config.url || '';
-      if (!u.includes('/api/timedtext') || u.includes('&translate_h00ked')) {
-        this.byPassRequest = true;
-      }
-    },
-    async onResponse(xhr, config) {
-      const url = config.url || '';
-      if (!url.includes('/api/timedtext') || url.includes('&translate_h00ked')) return;
-
-      const j = xhr.xhJson;
-      if (!j || !j.events) return;
-
-      // Lấy nội dung phụ đề gốc
-      const lines = [];
-      for (const ev of j.events) {
-        if (!ev.segs) continue;
-        for (const seg of ev.segs) {
-          if (seg && typeof seg.utf8 === 'string') {
-            inPlaceArrayPush(lines, seg.utf8.split('\n'));
-          }
-        }
-      }
-      if (!lines.length) return;
-
-      // Dịch SANG TIẾNG VIỆT (luôn luôn)
-      const reqVI =
-        'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=vi&dj=1&dt=t&dt=rm&q=' +
-        encodeURIComponent(encodeFW(lines.join('\n'))) +
-        '&ie=UTF-8&oe=UTF-8';
-
-      const run = () =>
-        fetch(reqVI, { method: 'GET', credentials: 'omit', referrerPolicy: 'no-referrer' })
-          .then(r => r.json())
-          .then(r => {
-            if (!r || !r.sentences) throw new Error('No translation to VI');
-            return decodeFW(r.sentences.map(s => ('trans' in s ? s.trans : '')).join('')).split('\n');
-          })
-          .then(trVI => {
-            // Bắt đầu ghép: [Gốc] + [Tiếng Việt]
-            let i = 0;
-            for (const ev of j.events) {
-              if (!ev.segs) continue;
-              for (const seg of ev.segs) {
-                if (seg && typeof seg.utf8 === 'string') {
-                  const src = seg.utf8.split('\n');
-                  const out = src.map((line, k) => {
-                    const srcLine = lines[i + k];
-                    const tlVI = trVI[i + k] || '';
-                    if (line !== srcLine) return line; // bảo toàn format
-                    if (!tlVI || tlVI === line) return line;
-                    return line + '\n' + tlVI; // Dòng gốc + Dòng TIẾNG VIỆT
-                  });
-                  seg.utf8 = out.join('\n');
-                  i += src.length;
-                }
-              }
-            }
-            xhr.xhJson = j;
-          })
-          .catch(err => {
-            console.warn('Dịch sang tiếng Việt thất bại:', err);
-          });
-
-      requestDeferred = requestDeferred.then(run);
-      await requestDeferred;
-    }
-  });
-})();
-
-// ---------- Screenshot Button (điều chỉnh lại, không lệch) ----------
 (() => {
   if (window.top !== window) return;
 
