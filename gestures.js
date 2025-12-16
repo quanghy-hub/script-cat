@@ -1,18 +1,15 @@
 // ==UserScript==
-// @name         Gestures
+// @name         Gestures 
 // @namespace    https://github.com/yourname/vm-unified-gestures-open-tab
-// @version      1.6.95
-// @description  Long-press mở link; right-click mở tab; DOUBLE right-click đóng tab; DOUBLE tap (touch) đóng tab; Hai ngón giữ nguyên ≥500ms (không di chuyển/không pinch/không scroll) → đi cuối trang.
+// @version      1.7.0
+// @description  Long-press mở link; right-click mở tab; DOUBLE right-click đóng tab; DOUBLE tap (touch) đóng tab; Hai ngón giữ nguyên >=500ms -> đi cuối trang. Có Blacklist.
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
 // @run-at       document-start
 // @noframes
-// @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/gestures.js
-// @downloadURL  https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/gestures.js
 // @grant        GM_registerMenuCommand
 // @grant        GM_getValue
 // @grant        GM_setValue
-// @grant        GM_addStyle
 // @grant        GM_openInTab
 // @grant        window.close
 // @license      MIT
@@ -36,19 +33,70 @@
   'use strict';
   const G = window.__GESTURES_GUARD__;
   const STORE_KEY = 'vmug_cfg_v168';
+  // Thêm blacklist vào mặc định
   const DEFAULTS = {
     lpress:     { enabled:true, mode:'bg', longMs:500, tapTol:24 },
     rclick:     { enabled:true, mode:'fg' },
     dblRightMs: 600,
-    dblTapMs:   260
+    dblTapMs:   260,
+    blacklist:  [] // Mảng chứa các domain muốn tắt script
   };
 
   const deepClone=o=>JSON.parse(JSON.stringify(o));
-  const loadCfg=()=>{ try{ const raw=GM_getValue(STORE_KEY,''); return raw?Object.assign(deepClone(DEFAULTS), typeof raw==='string'?JSON.parse(raw):raw):deepClone(DEFAULTS);}catch{ return deepClone(DEFAULTS);} };
+  const loadCfg=()=>{
+      try{
+          const raw=GM_getValue(STORE_KEY,'');
+          const data = raw ? Object.assign(deepClone(DEFAULTS), typeof raw==='string'?JSON.parse(raw):raw) : deepClone(DEFAULTS);
+          // Đảm bảo blacklist luôn tồn tại nếu load từ config cũ
+          if(!Array.isArray(data.blacklist)) data.blacklist = [];
+          return data;
+      } catch{ return deepClone(DEFAULTS);}
+  };
   const saveCfg=()=>{ try{ GM_setValue(STORE_KEY, JSON.stringify(CFG)); }catch{} };
   let CFG = loadCfg();
 
-  /* ===== Menus ===== */
+  /* ===== BLACKLIST CHECK ===== */
+  const curHost = window.location.hostname;
+  // Kiểm tra xem host hiện tại có chứa chuỗi nào trong blacklist không
+  const isIgnored = CFG.blacklist.some(domain => curHost.includes(domain));
+
+  /* ===== Menus: Quản lý Blacklist ===== */
+  // 1. Menu Edit thủ công
+  GM_registerMenuCommand(`📝 Edit Blacklist (${CFG.blacklist.length})`, () => {
+      const currentList = CFG.blacklist.join(', ');
+      const input = prompt('Nhập danh sách domain muốn tắt (phân cách bởi dấu phẩy):', currentList);
+      if (input !== null) {
+          CFG.blacklist = input.split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+          saveCfg();
+          if(confirm('Đã lưu. Tải lại trang để áp dụng?')) location.reload();
+      }
+  });
+
+  // 2. Menu Toggle nhanh cho trang hiện tại
+  if (isIgnored) {
+      GM_registerMenuCommand(`✅ Enable on: ${curHost}`, () => {
+          CFG.blacklist = CFG.blacklist.filter(d => !curHost.includes(d));
+          saveCfg();
+          location.reload();
+      });
+  } else {
+      GM_registerMenuCommand(`⛔ Disable on: ${curHost}`, () => {
+          const domainToAdd = prompt('Nhập domain muốn chặn:', curHost);
+          if(domainToAdd) {
+              CFG.blacklist.push(domainToAdd.trim().toLowerCase());
+              saveCfg();
+              location.reload();
+          }
+      });
+  }
+
+  // === QUAN TRỌNG: Nếu trang nằm trong Blacklist thì return luôn, không chạy logic bên dưới ===
+  if (isIgnored) {
+      console.log(`[Gestures] Disabled on ${curHost} by blacklist.`);
+      return;
+  }
+
+  /* ===== Các Menu Cấu Hình Khác ===== */
   GM_registerMenuCommand?.(`🖱️ Right-click open: ${CFG.rclick.enabled?'On':'Off'} • ${CFG.rclick.mode.toUpperCase()}`, () => {
     const on = confirm('Bật right-click mở tab mới? OK=On, Cancel=Off');
     CFG.rclick.enabled = on;
@@ -158,7 +206,7 @@
     ev.preventDefault(); ev.stopPropagation();
   }, true);
 
-  /* ===== DOUBLE RIGHT click → CLOSE TAB ===== */
+  /* ===== DOUBLE RIGHT click -> CLOSE TAB ===== */
   let lastRTime=0, lastRX=0, lastRY=0;
   addEventListener('mousedown', ev => {
     if(ev.button!==2) return;
@@ -175,7 +223,7 @@
     lastRTime=now; lastRX=ev.clientX; lastRY=ev.clientY;
   }, true);
 
-  /* ===== Right-click (contextmenu) → OPEN NEW TAB (BG/FG) ===== */
+  /* ===== Right-click (contextmenu) -> OPEN NEW TAB (BG/FG) ===== */
   addEventListener('contextmenu', ev => {
     if (!CFG.rclick.enabled) return;
     const now=Date.now();
@@ -188,7 +236,7 @@
     blockNextContextmenuUntil = now+600;
   }, true);
 
-  /* ===== TOUCH: DOUBLE TAP → CLOSE TAB ===== */
+  /* ===== TOUCH: DOUBLE TAP -> CLOSE TAB ===== */
   let taps=[]; // {t,x,y}
   addEventListener('touchstart', ev => {
     if(inEditable(ev.target)) return;
@@ -212,22 +260,15 @@
     }
   }, {capture:true, passive:false});
 
-  /* ===== TOUCH: HAI NGÓN GIỮ NGUYÊN ≥500ms → SCROLL BOTTOM =====
-     Điều kiện:
-     - Bắt đầu với đúng 2 ngón.
-     - Mỗi ngón không dịch chuyển quá MOVE_TOL.
-     - Khoảng cách giữa 2 ngón không đổi trong SCALE_TOL (tránh pinch/zoom).
-     - Trang không bị cuộn quá SCROLL_TOL trong thời gian giữ.
-     - Không preventDefault → không cản trở pinch/zoom/scroll tự nhiên; chỉ kích hoạt khi thật sự đứng yên. */
+  /* ===== TOUCH: HAI NGÓN GIỮ NGUYÊN >=500ms -> SCROLL BOTTOM ===== */
   const TWO_FINGER_HOLD_MS = 500;
-  const MOVE_TOL   = 12;  // px: mỗi ngón không được lệch quá mức này
-  const SCALE_TOL  = 10;  // px: thay đổi khoảng cách giữa 2 ngón coi như pinch
-  const SCROLL_TOL = 2;   // px: nếu trang đã cuộn trong lúc giữ, hủy
+  const MOVE_TOL   = 12;
+  const SCALE_TOL  = 10;
+  const SCROLL_TOL = 2;
 
-  let tf = null; // {timer, id1,id2, start:[{id,x,y},{id,x,y}], startDist, sX,sY, movedOrScaled, scrolled}
+  let tf = null;
 
   function clearTF(){ if(tf?.timer){ clearTimeout(tf.timer); } tf=null; }
-
   function getTouchById(touchList, id){
     for(let i=0;i<touchList.length;i++){ if(touchList[i].identifier===id) return touchList[i]; }
     return null;
@@ -236,7 +277,6 @@
   addEventListener('touchstart', ev => {
     if(inEditable(ev.target)) return;
 
-    // khởi tạo khi vừa có đúng 2 ngón
     if(!tf && ev.touches.length===2){
       const a = ev.touches[0], b = ev.touches[1];
       const dist0 = Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY);
@@ -256,18 +296,13 @@
       };
       return;
     }
-
-    // nếu thêm bớt ngón → hủy
     if(tf && ev.touches.length!==2) clearTF();
   }, {capture:true, passive:true});
 
   addEventListener('touchmove', ev => {
     if(!tf) return;
-
-    // số ngón phải luôn là 2
     if(ev.touches.length!==2){ clearTF(); return; }
 
-    // phát hiện trang đã cuộn
     const se = document.scrollingElement||document.documentElement;
     const nowX = se.scrollLeft || window.pageXOffset || 0;
     const nowY = se.scrollTop  || window.pageYOffset || 0;
@@ -275,19 +310,16 @@
       tf.scrolled = true; clearTF(); return;
     }
 
-    // vị trí hiện tại của 2 id
     const t1 = getTouchById(ev.touches, tf.id1);
     const t2 = getTouchById(ev.touches, tf.id2);
     if(!t1 || !t2){ clearTF(); return; }
 
-    // kiểm tra di chuyển từng ngón
     const s1 = tf.start[0].id===tf.id1 ? tf.start[0] : tf.start[1];
     const s2 = tf.start[0].id===tf.id2 ? tf.start[0] : tf.start[1];
     const move1 = Math.hypot(t1.clientX - s1.x, t1.clientY - s1.y);
     const move2 = Math.hypot(t2.clientX - s2.x, t2.clientY - s2.y);
     if(move1 > MOVE_TOL || move2 > MOVE_TOL){ tf.movedOrScaled = true; clearTF(); return; }
 
-    // kiểm tra thay đổi khoảng cách 2 ngón (pinch/zoom)
     const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
     if(Math.abs(dist - tf.startDist) > SCALE_TOL){ tf.movedOrScaled = true; clearTF(); return; }
   }, {capture:true, passive:true});
