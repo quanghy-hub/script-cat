@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Floating Video
 // @namespace    http://tampermonkey.net/
-// @version      4.3
-// @description  Giao diện tinh gọn, trong suốt. Icon di chuyển được. Sửa lỗi thứ tự Next/Prev.
+// @version      4.4
+// @description  Fix lỗi chạm icon. Vị trí mặc định: Giữa trái. Giao diện tinh gọn.
 // @author       Claude
 // @match        *://*/*
 // @grant        none
@@ -14,7 +14,7 @@
 
     // --- CSS ---
     const css = `
-        /* Master Icon - Có thể di chuyển, tự làm mờ */
+        /* Master Icon */
         #fvp-master-icon {
             position: fixed; z-index: 2147483646;
             width: 48px; height: 48px;
@@ -24,10 +24,10 @@
             display: flex; align-items: center; justify-content: center;
             cursor: move; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
             transition: transform .2s, opacity .3s, background .2s;
-            touch-action: none; /* Quan trọng để drag mượt */
+            touch-action: none; /* Quan trọng: chặn hành vi mặc định để JS xử lý touch */
             opacity: 1;
         }
-        #fvp-master-icon.fvp-idle { opacity: 0.4; } /* Mờ đi khi không dùng */
+        #fvp-master-icon.fvp-idle { opacity: 0.4; }
         #fvp-master-icon:hover, #fvp-master-icon:active { opacity: 1; transform: scale(1.05); background: rgba(0,0,0,0.8); }
         
         #fvp-badge {
@@ -59,7 +59,8 @@
 
         /* Player Container */
         #fvp-container {
-            position: fixed; top: 60px; right: 20px;
+            position: fixed; 
+            /* Vị trí mặc định sẽ được set bằng JS để căn giữa trái chính xác */
             width: min(320px, calc(100vw - 40px)); height: 180px;
             background: #000; box-shadow: 0 10px 40px rgba(0,0,0,0.6);
             z-index: 2147483647; border-radius: 12px;
@@ -122,7 +123,7 @@
         }
         #fvp-seek:hover::-webkit-slider-thumb { transform: scale(1.2); }
 
-        /* Vertical Sliders (Speed/Volume) - CÂN ĐỐI TUYỆT ĐỐI */
+        /* Sliders */
         .fvp-popup {
             display: none; position: absolute; bottom: 45px; left: 50%; transform: translateX(-50%);
             background: transparent; padding: 0;
@@ -132,22 +133,15 @@
         .fvp-val { font-size: 12px; font-weight: 700; color: #fff; margin-bottom: 2px; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
         
         .fvp-v-slider {
-            -webkit-appearance: none;
-            width: 20px; /* Rộng hơn để dễ thao tác */
-            height: 100px;
+            -webkit-appearance: none; width: 20px; height: 100px;
             writing-mode: vertical-lr; direction: rtl; margin: 4px 0;
-            background: transparent;
-            cursor: pointer;
-            /* Tạo đường kẻ track giả ở chính giữa */
+            background: transparent; cursor: pointer;
             background-image: linear-gradient(to right, transparent 8px, rgba(255,255,255,0.4) 8px, rgba(255,255,255,0.4) 12px, transparent 12px);
             border-radius: 10px;
         }
-        /* Thumb nằm chính giữa input width 20px */
         .fvp-v-slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 16px; height: 16px;
-            background: #fff; border-radius: 50%;
-            margin-right: 2px; /* (20 - 16) / 2 = 2. Căn giữa chuẩn */
+            -webkit-appearance: none; width: 16px; height: 16px;
+            background: #fff; border-radius: 50%; margin-right: 2px;
             box-shadow: 0 1px 4px rgba(0,0,0,0.5);
         }
 
@@ -167,7 +161,6 @@
             border-radius: 0 0 2px 0; pointer-events: none;
         }
 
-        /* Placeholder */
         .fvp-ph { background: #111; border: 1px dashed #333; border-radius: 8px; display: flex; align-items: center; justify-content: center; opacity: 0.5; }
 
         @keyframes fvp-fade-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
@@ -198,6 +191,7 @@
         isDrag: false, isResize: false, isIconDrag: false,
         startX: 0, startY: 0,
         initX: 0, initY: 0, initW: 0, initH: 0,
+        iconStartX: 0, iconStartY: 0, // Dùng để check click vs drag
         resizeDir: '',
         hideControlsTimer: null,
         idleIconTimer: null
@@ -210,51 +204,10 @@
             <span id="fvp-badge">0</span>
         `);
         icon.id = 'fvp-master-icon';
-        // Set vị trí ban đầu
-        icon.style.bottom = '20px';
-        icon.style.left = '20px';
+        icon.style.bottom = '20px'; icon.style.left = '20px';
         document.body.appendChild(icon);
 
         menu = el('div'); menu.id = 'fvp-menu'; document.body.appendChild(menu);
-
-        // --- ICON INTERACTION ---
-        const resetIdle = () => {
-            icon.classList.remove('fvp-idle');
-            clearTimeout(state.idleIconTimer);
-            state.idleIconTimer = setTimeout(() => icon.classList.add('fvp-idle'), 3000);
-        };
-
-        // Icon Click (Chỉ mở menu nếu không drag)
-        let isDraggingIcon = false;
-        icon.addEventListener('click', (e) => {
-            if(isDraggingIcon) return;
-            e.stopPropagation();
-            resetIdle();
-            const isShow = menu.style.display === 'flex';
-            menu.style.display = isShow ? 'none' : 'flex';
-            // Cập nhật vị trí menu theo icon
-            if(!isShow) {
-                const rect = icon.getBoundingClientRect();
-                menu.style.left = Math.min(rect.left, window.innerWidth - 290) + 'px';
-                menu.style.bottom = (window.innerHeight - rect.top + 10) + 'px';
-                renderMenu();
-            }
-        });
-
-        // Icon Drag Logic
-        const startIconDrag = (e) => {
-            e.preventDefault(); // Ngăn scroll
-            e.stopPropagation();
-            resetIdle();
-            const c = getCoord(e);
-            state.isIconDrag = true; isDraggingIcon = false;
-            state.startX = c.x; state.startY = c.y;
-            const rect = icon.getBoundingClientRect();
-            state.initX = rect.left; state.initY = rect.top;
-        };
-
-        icon.addEventListener('touchstart', startIconDrag, {passive: false});
-        icon.addEventListener('mousedown', startIconDrag);
 
         // --- PLAYER BOX ---
         box = el('div', '', `
@@ -296,13 +249,50 @@
                 </div>
             </div>
         `);
-        box.id = 'fvp-container'; box.style.display = 'none';
+        box.id = 'fvp-container'; 
+        box.style.display = 'none';
+        
+        // --- VỊ TRÍ MẶC ĐỊNH: GIỮA TRÁI (LEFT CENTER) ---
+        // Tính toán để đặt player ở giữa màn hình theo chiều dọc, sát lề trái
+        const defaultTop = Math.max(20, (window.innerHeight - 180) / 2);
+        box.style.top = defaultTop + 'px';
+        box.style.left = '20px';
+        
         document.body.appendChild(box);
-        setupInteractions(resetIdle, () => isDraggingIcon = true);
+
+        setupInteractions();
         resetIdle();
     }
 
-    function setupInteractions(resetIconIdle, setIconDragged) {
+    // Tách riêng hàm này để gọi lại dễ dàng
+    const toggleMenu = () => {
+        resetIdle();
+        const isShow = menu.style.display === 'flex';
+        menu.style.display = isShow ? 'none' : 'flex';
+        if(!isShow) {
+            const rect = icon.getBoundingClientRect();
+            // Tự động chỉnh vị trí menu để không bị khuất
+            menu.style.left = Math.min(rect.left, window.innerWidth - 290) + 'px';
+            const spaceBelow = window.innerHeight - rect.bottom;
+            if (spaceBelow < 300) {
+                menu.style.bottom = (window.innerHeight - rect.top + 10) + 'px';
+                menu.style.top = 'auto';
+            } else {
+                menu.style.top = (rect.bottom + 10) + 'px';
+                menu.style.bottom = 'auto';
+            }
+            renderMenu();
+        }
+    };
+
+    const resetIdle = () => {
+        if(!icon) return;
+        icon.classList.remove('fvp-idle');
+        clearTimeout(state.idleIconTimer);
+        state.idleIconTimer = setTimeout(() => icon.classList.add('fvp-idle'), 3000);
+    };
+
+    function setupInteractions() {
         const showControls = () => {
             box.classList.add('fvp-show-controls');
             clearTimeout(state.hideControlsTimer);
@@ -322,27 +312,42 @@
             } else showControls();
         });
 
-        // --- GLOBAL MOVE HANDLER ---
+        // --- DRAG LOGIC ---
+        const startIconDrag = (e) => {
+            e.preventDefault(); // Ngăn cuộn trang khi chạm vào icon
+            e.stopPropagation();
+            resetIdle();
+            const c = getCoord(e);
+            state.isIconDrag = true;
+            state.startX = c.x; state.startY = c.y;
+            state.iconStartX = c.x; state.iconStartY = c.y; // Lưu điểm bắt đầu để so sánh click
+            
+            const rect = icon.getBoundingClientRect();
+            state.initX = rect.left; state.initY = rect.top;
+        };
+
+        icon.addEventListener('touchstart', startIconDrag, {passive: false});
+        icon.addEventListener('mousedown', startIconDrag);
+
         const move = (e) => {
             if(!state.isDrag && !state.isResize && !state.isIconDrag) return;
             const c = getCoord(e);
             const dx = c.x - state.startX;
             const dy = c.y - state.startY;
 
-            // Icon Drag
+            // Icon Move
             if(state.isIconDrag) {
-                if(Math.abs(dx) > 5 || Math.abs(dy) > 5) setIconDragged();
                 let nx = state.initX + dx;
                 let ny = state.initY + dy;
                 nx = Math.max(10, Math.min(nx, window.innerWidth - 58));
                 ny = Math.max(10, Math.min(ny, window.innerHeight - 58));
                 icon.style.left = nx + 'px'; icon.style.top = ny + 'px';
                 icon.style.bottom = 'auto'; icon.style.right = 'auto';
-                resetIconIdle();
+                resetIdle();
                 return;
             }
 
-            // Player Drag
+            // Player Move
             if(state.isDrag) {
                 let nx = state.initX + dx;
                 let ny = state.initY + dy;
@@ -357,7 +362,24 @@
             }
         };
 
-        const end = () => { state.isDrag = false; state.isResize = false; state.isIconDrag = false; };
+        const end = (e) => {
+            // FIX LỖI 1 CHẠM:
+            // Nếu đang drag icon mà thả ra...
+            if(state.isIconDrag) {
+                const c = getCoord(e); // Lưu ý: touchend không có clientX, phải dùng changedTouches
+                // Tính khoảng cách di chuyển
+                const dx = c.x - state.iconStartX;
+                const dy = c.y - state.iconStartY;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                
+                // Nếu di chuyển ít hơn 6px thì coi là CLICK
+                if(dist < 6) {
+                    toggleMenu();
+                }
+            }
+
+            state.isDrag = false; state.isResize = false; state.isIconDrag = false; 
+        };
         
         document.addEventListener('touchmove', move, {passive: false});
         document.addEventListener('mousemove', move);
@@ -390,7 +412,7 @@
             h.addEventListener('mousedown', startResize);
         });
 
-        // Buttons
+        // Buttons & Popups
         const btn = (id, fn) => $(id).addEventListener('click', (e) => { e.stopPropagation(); fn(); showControls(); });
         btn('fvp-close', restore);
         btn('fvp-play', () => curVid && (curVid.paused ? curVid.play() : curVid.pause()));
@@ -407,7 +429,6 @@
         btn('fvp-spd-btn', () => toggleP('fvp-spd-popup', 'fvp-vol-popup'));
         btn('fvp-vol-btn', () => toggleP('fvp-vol-popup', 'fvp-spd-popup'));
         $('fvp-vol-btn').addEventListener('click', () => { if(curVid) { curVid.muted = !curVid.muted; updateVolIcon(); }});
-
         $('fvp-spd').addEventListener('input', (e) => { if(curVid) { curVid.playbackRate = parseFloat(e.target.value); $('fvp-spd-btn').textContent = $('fvp-spd-val').textContent = e.target.value + 'x'; }});
         $('fvp-vol').addEventListener('input', (e) => { if(curVid) { curVid.volume = e.target.value; curVid.muted = false; updateVolIcon(); }});
     }
@@ -420,21 +441,12 @@
         if(!curVid.muted) $('fvp-vol').value = v;
     }
 
-    // --- FIX LOGIC SWITCH VIDEO (QUAN TRỌNG) ---
     function getSortedVideos() {
-        // Lấy tất cả video VÀ placeholder
-        // Placeholder đại diện cho vị trí gốc của video đang float
         const all = Array.from(document.querySelectorAll('video, .fvp-ph'));
         const list = [];
         all.forEach(el => {
-            // Nếu là placeholder, nghĩa là đây là vị trí của curVid
-            if(el.classList.contains('fvp-ph')) {
-                if(curVid) list.push(curVid);
-            } 
-            // Nếu là video thường (không phải cái đang float)
-            else if(el !== curVid && !el.closest('#fvp-wrapper')) {
-                list.push(el);
-            }
+            if(el.classList.contains('fvp-ph')) { if(curVid) list.push(curVid); } 
+            else if(el !== curVid && !el.closest('#fvp-wrapper')) list.push(el);
         });
         return list;
     }
@@ -444,8 +456,7 @@
         if(!curVid || list.length <= 1) return;
         const idx = list.indexOf(curVid);
         if(idx === -1) return;
-        const next = list[(idx + dir + list.length) % list.length];
-        float(next);
+        float(list[(idx + dir + list.length) % list.length]);
     }
 
     function restore() {
@@ -493,7 +504,6 @@
     }
 
     setInterval(() => {
-        // Chỉ đếm video thực sự có kích thước, tránh video ẩn/quảng cáo
         const list = getSortedVideos().filter(v => {
             if(v === curVid) return true;
             const r = v.getBoundingClientRect();
