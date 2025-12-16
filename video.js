@@ -1,11 +1,11 @@
 // ==UserScript==
-// @name         Video
+// @name         Video Fixed
 // @namespace    https://your.namespace
-// @version      1.1.0
+// @version      1.1.1
 // @description  Full-screen landscape, swipe seek with realtime frame preview, long-press speed, ArrowRight/Forward-key seek, ArrowLeft/Back-key seek, 500% volume boost (WebAudio), in-page Settings panel.
 // @match        *://*/*
-// @updateURL   https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/video.js
-// @downloadURL https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/video.js
+// @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/video.js
+// @downloadURL  https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/video.js
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
@@ -33,6 +33,23 @@
     .mvh-btn{background:#2b6cb0;border:none;color:#fff;border-radius:8px;padding:8px 12px;cursor:pointer}
     .mvh-btn.secondary{background:#444}
     .mvh-note{opacity:.8;font-size:12px}
+    /* FIX: Style cho phần hiển thị thời gian tua để luôn ở giữa màn hình */
+    .me-notice-center {
+        position: fixed !important;
+        top: 50% !important;
+        left: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        z-index: 2147483647 !important;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background-color: rgba(0, 0, 0, 0.6);
+        color: white;
+        border-radius: 4px;
+        padding: 10px 20px;
+        font-size: 20px;
+        pointer-events: none;
+    }
   `);
 
   const LOG = (...a)=>console.log('[MobileVideoHelper]', ...a);
@@ -258,7 +275,7 @@
             screenY<screen.height*0.05 || screenY>screen.height*0.95) return;
       }
       let startX=Math.ceil(e.touches[0].clientX);
-      let startY=Math.ceil(screenY);
+      let startY=Math.ceil(e.touches[0].clientY); // Use clientY for consistency with touchmove
       let endX=startX, endY=startY;
 
       let videoElement, target=e.target;
@@ -382,18 +399,13 @@
         }
       }, 800);
 
-      const screenWidth=screen.width;
-      const componentMoveLeft=componentContainer.offsetLeft;
-      const moveNum=Math.floor(componentMoveLeft*1.1/screenWidth);
-
+      // FIX: Căn giữa phần hiển thị 5s bằng class 'me-notice-center'
       let noticeEl=componentContainer.querySelector(':scope>.me-notice');
       if (!noticeEl){
-        noticeEl=document.createElement('div'); noticeEl.className='me-notice';
-        const noticeWidth=110, noticeTop=Math.round(componentContainer.clientHeight/6);
-        const noticeLeft=Math.round(moveNum*screenWidth + componentContainer.clientWidth/2 - noticeWidth/2);
-        noticeEl.style.cssText=sharedCSS+"font-size:16px;position:absolute;display:none;letter-spacing:normal;";
-        noticeEl.style.width=noticeWidth+'px'; noticeEl.style.height='30px';
-        noticeEl.style.left=noticeLeft+'px'; noticeEl.style.top=noticeTop+'px';
+        noticeEl=document.createElement('div');
+        noticeEl.className='me-notice me-notice-center'; // Thêm class me-notice-center
+        noticeEl.style.display='none';
+        // Xóa các style thủ công cũ
         componentContainer.appendChild(noticeEl);
         window.addEventListener('resize', ()=>noticeEl.remove(), {once:true});
       }
@@ -450,11 +462,26 @@
         if (rateTimer){ clearTimeout(rateTimer); rateTimer=null; }
         if ((sampleVideo && !maybeTiktok) || !videoReady) return;
 
-        ev.preventDefault();
+        // FIX: Xử lý ưu tiên cuộn trang nếu vuốt dọc
         if (ev.touches.length===1){
-          const temp=Math.ceil(ev.touches[0].clientX);
-          if (temp===endX) return; else endX=temp;
-          endY=Math.ceil(ev.touches[0].screenY);
+          const tempX=Math.ceil(ev.touches[0].clientX);
+          const tempY=Math.ceil(ev.touches[0].clientY);
+
+          const diffX = tempX - startX;
+          const diffY = tempY - startY;
+
+          // Nếu chưa xác định hướng (chưa bắt đầu tua) VÀ vuốt dọc nhiều hơn vuốt ngang
+          if (!direction && Math.abs(diffY) > Math.abs(diffX) && Math.abs(diffY) > 5) {
+             // Không làm gì cả, trả về để trình duyệt xử lý cuộn trang
+             return;
+          }
+          // Nếu đã xác định là tua ngang hoặc vuốt ngang rõ rệt, chặn mặc định (chặn cuộn)
+          ev.preventDefault();
+
+          if (tempX===endX) return; else endX=tempX;
+          endY=tempY;
+        } else {
+             ev.preventDefault();
         }
 
         if (endX > startX+10){
