@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Inline Translate (Format Preserved) - Optimized
+// @name         Translate
 // @namespace    vn.inline.translate.ctrl.swipe.groups
 // @version      2.4.0
-// @description  Shift/Alt/Ctrl (desktop) hoặc Vuốt (mobile) để dịch. Hỗ trợ tùy chỉnh hướng vuốt, phím tắt. Fix VPN.
+// @description   Fix VPN.
 // @author       you
 // @match        http://*/*
 // @match        https://*/*
