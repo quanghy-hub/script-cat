@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Video Fixed — FINAL (YT-safe)
 // @namespace    https://your.namespace
-// @version      1.6.0
-// @description  FINAL: Swipe seek + keyboard seek with ONE unified notice, YouTube fullscreen-safe (no clipping), smooth fade, smart fullscreen icon, audio boost. Polished & stable.
+// @version      1.6.1
+// @description  FINAL: Swipe seek + keyboard seek with ONE unified notice, YouTube fullscreen-safe (no clipping), smooth fade, smart fullscreen icon, audio boost. Polished & stable. (touch targets fixed)
 // @match        *://*/*
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -79,6 +79,29 @@
     const vs = [...document.querySelectorAll('video')];
     return vs.find(v => v.offsetWidth && v.offsetHeight) || null;
   };
+
+  // New helper: find video element at a (x,y) point (viewport coordinates).
+  function videoFromPoint(x, y) {
+    try {
+      let el = document.elementFromPoint(x, y);
+      // climb up to nearest <video> ancestor
+      let iter = el;
+      while (iter) {
+        if (iter.tagName === 'VIDEO') return iter;
+        iter = iter.parentElement;
+      }
+      // If none, try to find the topmost video whose bounding rect contains point (fallback)
+      const vids = Array.from(document.querySelectorAll('video'));
+      for (const v of vids) {
+        const r = v.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0 && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+          return v;
+        }
+      }
+    } catch (e) { /* ignore */ }
+    // final fallback to visible video
+    return getVideo();
+  }
 
   /* ================= UNIFIED SEEK NOTICE (FINAL) ================= */
   let noticeEl = null;
@@ -213,23 +236,31 @@
     }
   }, true);
 
-  /* ================= TOUCH SWIPE ================= */
+  /* ================= TOUCH SWIPE (fixed to target video) ================= */
   let sx, sy, st, last = 0;
-  document.addEventListener('touchstart', e => {
+  document.addEventListener('touchstart', function (e) {
     if (e.touches.length !== 1) return;
-    const v = getVideo(); if (!v) return;
+    const t = e.touches[0];
+    // find video under touch point
+    const v = videoFromPoint(t.clientX, t.clientY);
+    if (!v) return;
 
-    sx = e.touches[0].clientX;
-    sy = e.touches[0].clientY;
+    sx = t.clientX;
+    sy = t.clientY;
     st = v.currentTime;
 
+    // named handlers so we can remove them reliably
     function move(ev) {
-      const x = ev.touches[0].clientX;
-      const y = ev.touches[0].clientY;
-      const dx = x - sx;
-      const dy = y - sy;
+      if (ev.touches.length === 0) return;
+      const tx = ev.touches[0].clientX;
+      const ty = ev.touches[0].clientY;
+      const dx = tx - sx;
+      const dy = ty - sy;
 
+      // if vertical dominant, allow scroll (do nothing)
       if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) return;
+
+      // horizontal swipe - prevent page scroll
       ev.preventDefault();
 
       const sens = v.duration <= cfg.shortThreshold ? cfg.swipeShort : cfg.swipeLong;
@@ -246,11 +277,20 @@
       }
     }
 
-    function end() {
-      document.removeEventListener('touchmove', move);
-      document.removeEventListener('touchend', end);
+    function end(ev) {
+      // final apply if not realtime or to ensure final pos
+      if (!cfg.realtimePreview && ev.changedTouches && ev.changedTouches[0]) {
+        const tx = ev.changedTouches[0].clientX;
+        const sens = v.duration <= cfg.shortThreshold ? cfg.swipeShort : cfg.swipeLong;
+        const delta = Math.round((tx - sx) * sens);
+        v.currentTime = clamp(st + delta, 0, v.duration || 1e9);
+        showSeekNotice(v, delta);
+      }
+      document.removeEventListener('touchmove', move, { passive: false });
+      document.removeEventListener('touchend', end, { once: true });
     }
 
+    // attach listeners
     document.addEventListener('touchmove', move, { passive: false });
     document.addEventListener('touchend', end, { once: true });
   }, { passive: true });
