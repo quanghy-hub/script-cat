@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Floating Video Player (Mobile Optimized + Touch Support)
+// @name         Floating
 // @namespace    http://tampermonkey.net/
-// @version      3.2
-// @description  Hỗ trợ cảm ứng (Touch), kéo thả mượt mà trên Mobile. Fix lỗi xung đột cử chỉ.
+// @version      3.3
+// @description  Chặn chạm xuyên thấu, thêm resize góc chéo, tăng diện tích thao tác.
 // @author       Gemini
 // @match        *://*/*
 // @grant        none
@@ -11,24 +11,37 @@
 (function() {
     'use strict';
 
-    // --- 1. CSS (Optimized for Touch Targets) ---
+    // --- 1. CSS (Touch Blocking & Big Handles) ---
     const css = `
         #fvp-master-icon{position:fixed;bottom:20px;left:20px;z-index:2147483646;width:48px;height:48px;background:rgba(20,20,20,0.6);backdrop-filter:blur(5px);border:1px solid rgba(255,255,255,0.1);border-radius:50%;color:rgba(255,255,255,0.9);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.2);transition:all .3s}
         #fvp-badge{position:absolute;top:-2px;right:-2px;background:#fff;color:#000;font-size:10px;font-weight:700;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;border-radius:50%}
-        #fvp-menu{position:fixed;bottom:80px;left:20px;z-index:2147483646;background:rgba(10,10,10,0.85);backdrop-filter:blur(15px);border:1px solid rgba(255,255,255,0.1);border-radius:12px;width:280px;max-height:50vh;overflow-y:auto;display:none;flex-direction:column;padding:8px 0;color:#eee}
+        #fvp-menu{position:fixed;bottom:80px;left:20px;z-index:2147483646;background:rgba(10,10,10,0.9);backdrop-filter:blur(15px);border:1px solid rgba(255,255,255,0.1);border-radius:12px;width:280px;max-height:50vh;overflow-y:auto;display:none;flex-direction:column;padding:8px 0;color:#eee}
         .fvp-menu-item{padding:12px 16px;font-size:14px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.05);display:flex;gap:12px}.fvp-menu-item.active{background:rgba(255,255,255,0.15);font-weight:500}
         
-        /* Container */
-        #fvp-container{position:fixed;top:60px;right:20px;width:300px;height:180px;background:#000;box-shadow:0 10px 40px rgba(0,0,0,.8);z-index:2147483647;border-radius:12px;overflow:hidden;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.1);min-width:200px;min-height:120px; touch-action: none;} /* touch-action: none quan trọng để chặn scroll */
-        #fvp-wrapper{width:100%;height:100%;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden}
+        /* Container - Quan trọng: touch-action none để browser không can thiệp scroll */
+        #fvp-container{
+            position:fixed;top:60px;right:20px;width:300px;height:180px;
+            background:#000;
+            box-shadow:0 10px 40px rgba(0,0,0,.9);
+            z-index:2147483647;
+            border-radius:12px;
+            /* overflow:hidden; -> Bỏ hidden để hiển thị handle resize tràn ra ngoài nếu cần */
+            display:flex;align-items:center;justify-content:center;
+            border:1px solid rgba(255,255,255,.1);
+            min-width:200px;min-height:120px; 
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        #fvp-wrapper{width:100%;height:100%;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden; border-radius:12px;}
         #fvp-wrapper video{width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;object-position:center!important}
         
         /* Overlays */
-        .fvp-overlay{position:absolute;left:0;width:100%;padding:10px 15px;opacity:0;transition:opacity .3s;z-index:20;display:flex;align-items:center;box-sizing:border-box;cursor:move}
-        #fvp-container:hover .fvp-overlay, #fvp-container.fvp-touch-active .fvp-overlay {opacity:1} /* Hiện khi touch */
+        .fvp-overlay{position:absolute;left:0;width:100%;padding:10px 15px;opacity:0;transition:opacity .3s;z-index:20;display:flex;align-items:center;box-sizing:border-box;}
+        #fvp-container:hover .fvp-overlay, #fvp-container.fvp-touch-active .fvp-overlay {opacity:1}
         
-        #fvp-head{top:0;justify-content:space-between;background:linear-gradient(to bottom,rgba(0,0,0,.85),transparent);padding-top:15px;height:50px}
-        #fvp-ctrl{bottom:0;background:linear-gradient(to top,rgba(0,0,0,.85),transparent);padding-top:40px;gap:10px;justify-content:space-between;padding-bottom:10px}
+        #fvp-head{top:0;justify-content:space-between;background:linear-gradient(to bottom,rgba(0,0,0,.9),transparent);padding-top:15px;height:50px; cursor:move; border-radius:12px 12px 0 0;}
+        #fvp-ctrl{bottom:0;background:linear-gradient(to top,rgba(0,0,0,.9),transparent);padding-top:40px;gap:10px;justify-content:space-between;padding-bottom:10px; cursor:default; border-radius:0 0 12px 12px;}
         
         .fvp-grp{display:flex;align-items:center;gap:10px;position:relative}
         .fvp-btn{background:0 0;border:0;color:rgba(255,255,255,.9);cursor:pointer;font-size:20px;width:30px;height:30px;padding:0;display:flex;align-items:center;justify-content:center}
@@ -42,38 +55,42 @@
         .fvp-v-slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;background:#fff;border-radius:50%;cursor:pointer;margin-right:-5px}
         
         /* Popup */
-        .fvp-popup{display:none;position:absolute;bottom:40px;left:50%;transform:translateX(-50%);background:rgba(15,15,15,.9);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.1);padding:12px 8px;border-radius:15px;flex-direction:column;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+        .fvp-popup{display:none;position:absolute;bottom:45px;left:50%;transform:translateX(-50%);background:rgba(15,15,15,.95);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.1);padding:12px 8px;border-radius:15px;flex-direction:column;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.5)}
         .fvp-grp:hover .fvp-popup, .fvp-grp.active .fvp-popup{display:flex}
-        .fvp-popup::after{content:'';position:absolute;top:100%;left:0;width:100%;height:30px} /* Bridge lớn hơn cho touch */
+        .fvp-popup::after{content:'';position:absolute;top:100%;left:0;width:100%;height:30px}
         .fvp-val{font-size:11px;font-weight:600;color:#fff;font-family:monospace;margin-bottom:4px}
         
         #fvp-time{color:rgba(255,255,255,.7);font-size:11px;font-family:monospace;min-width:70px;text-align:center;pointer-events:none}
         .fvp-ph{background:#111;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#666;border:1px solid #333;border-radius:8px;font-size:12px;padding:10px}
 
-        /* RESIZE HANDLES (Tăng kích thước vùng chạm cho Mobile) */
-        .fvp-resize-handle{position:absolute;z-index:100;touch-action:none}
-        .fvp-resize-r{top:0;right:0;bottom:0;width:25px;cursor:e-resize;background:transparent} /* Vùng chạm rộng 25px */
-        .fvp-resize-t{top:0;left:0;right:0;height:25px;cursor:n-resize;background:transparent} /* Vùng chạm cao 25px */
+        /* RESIZE HANDLES - Tăng diện tích & Thêm góc */
+        .fvp-resize-handle{position:absolute;z-index:100;touch-action:none; background:transparent;}
+        
+        /* Cạnh Phải */
+        .fvp-resize-r{top:20px;right:-10px;bottom:20px;width:30px;cursor:e-resize;}
+        /* Cạnh Trên */
+        .fvp-resize-t{top:-10px;left:20px;right:20px;height:30px;cursor:n-resize;}
+        /* Góc Trên-Phải (Chéo) */
+        .fvp-resize-tr{top:-10px;right:-10px;width:40px;height:40px;cursor:ne-resize; z-index:101;}
+        /* Góc Dưới-Phải (Chéo) */
+        .fvp-resize-br{bottom:-10px;right:-10px;width:40px;height:40px;cursor:se-resize; z-index:101;}
     `;
     const style = document.createElement('style'); style.textContent = css; document.head.appendChild(style);
 
     // --- 2. HELPERS & VARS ---
     const $ = (id) => document.getElementById(id);
     const el = (tag, c, html) => { const e = document.createElement(tag); if(c) e.className=c; if(html) e.innerHTML=html; return e; };
-    // Helper sự kiện hỗ trợ cả Mouse và Touch
-    const on = (el, events, fn) => events.split(' ').forEach(ev => el.addEventListener(ev, fn, {passive: false})); // passive: false để dùng preventDefault
+    const on = (el, events, fn) => events.split(' ').forEach(ev => el.addEventListener(ev, fn, {passive: false})); 
     
     let box, icon, menu, curVid, origPar, ph, videos = [], fitIdx = 0;
     const FIT = ['contain', 'cover', 'fill'], ICONS = ['⤢', '🔍', '↔'];
     
     // State variables
     let isDrag = false, isResizing = false;
-    let startX = 0, startY = 0; // Tọa độ bắt đầu chạm/click
-    let initLeft = 0, initTop = 0; // Vị trí box ban đầu
-    let initW = 0, initH = 0; // Kích thước box ban đầu
-    let rDir = ''; // Hướng resize
+    let startX = 0, startY = 0; 
+    let initLeft = 0, initTop = 0, initW = 0, initH = 0;
+    let rDir = ''; 
 
-    // Lấy tọa độ X, Y từ event (Touch hoặc Mouse)
     const getXY = (e) => {
         const p = e.touches ? e.touches[0] : e;
         return { x: p.clientX, y: p.clientY };
@@ -87,7 +104,7 @@
         menu = el('div'); menu.id = 'fvp-menu'; document.body.appendChild(menu);
 
         on(icon, 'click touchend', (e) => { 
-            if(e.type === 'touchend') e.preventDefault(); // Tránh double click trên mobile
+            if(e.type === 'touchend') e.preventDefault();
             e.stopPropagation(); 
             menu.style.display = menu.style.display==='flex'?'none':'flex'; 
             if(menu.style.display==='flex') renderMenu(); 
@@ -96,9 +113,12 @@
         // Player Container
         box = el('div', '', `
             <div id="fvp-wrapper"></div>
-            <!-- Resize Handles (To hơn cho touch) -->
+            
+            <!-- Resize Handles (4 vị trí) -->
             <div class="fvp-resize-handle fvp-resize-t" data-dir="t"></div>
             <div class="fvp-resize-handle fvp-resize-r" data-dir="r"></div>
+            <div class="fvp-resize-handle fvp-resize-tr" data-dir="tr"></div>
+            <div class="fvp-resize-handle fvp-resize-br" data-dir="br"></div>
             
             <div id="fvp-head" class="fvp-overlay"><span>Floating Player</span><button id="fvp-close" class="fvp-btn">✕</button></div>
             <div id="fvp-ctrl" class="fvp-overlay">
@@ -111,7 +131,7 @@
                 <div class="fvp-grp">
                     <span id="fvp-time">00:00</span>
                     <button id="fvp-fit" class="fvp-btn">⤢</button>
-                    <!-- Tách xa Audio/Speed -->
+                    
                     <div class="fvp-grp" style="margin-left:5px"><button class="fvp-btn" id="fvp-spd-btn" style="font-size:11px;font-weight:700">1x</button>
                         <div class="fvp-popup"><span class="fvp-val" id="fvp-spd-val">1.0x</span><input type="range" class="fvp-v-slider" id="fvp-spd" min=".25" max="3" step=".25" value="1"></div></div>
                     <div class="fvp-grp" style="margin-left:15px"><button id="fvp-mute" class="fvp-btn">🔊</button>
@@ -121,11 +141,14 @@
         `);
         box.id = 'fvp-container'; box.style.display='none'; document.body.appendChild(box);
 
-        // --- XỬ LÝ SỰ KIỆN KÉO THẢ & RESIZE (TOUCH & MOUSE) ---
-        
-        // 1. DRAG START
+        // --- BLOCK TOUCH PASS-THROUGH (Chặn xuyên thấu) ---
+        on(box, 'touchstart touchmove touchend', (e) => {
+             e.stopPropagation(); // Ngăn sự kiện nổi bọt lên document/body
+             // Không dùng preventDefault() ở đây vì sẽ làm liệt các nút bấm bên trong
+        });
+
+        // --- DRAG LOGIC ---
         const startDrag = (e) => {
-            // Chỉ drag khi chạm vào Head hoặc Ctrl, không chạm vào nút bấm/slider
             if(e.target.closest('.fvp-popup') || ['BUTTON','INPUT'].includes(e.target.tagName)) return;
             
             isDrag = true;
@@ -133,14 +156,12 @@
             startX = xy.x; startY = xy.y;
             initLeft = box.offsetLeft; initTop = box.offsetTop;
             
-            box.classList.add('fvp-touch-active'); // Giữ overlay hiện khi đang kéo
-            e.stopPropagation(); // Ngăn sự kiện lan xuống dưới (scroll trang)
+            box.classList.add('fvp-touch-active');
+            e.stopPropagation(); e.preventDefault(); // Chặn scroll trang
         };
-        
         on($('fvp-head'), 'mousedown touchstart', startDrag); 
-        on($('fvp-ctrl'), 'mousedown touchstart', startDrag);
-
-        // 2. RESIZE START
+        
+        // --- RESIZE LOGIC ---
         const startResize = (e) => {
             isResizing = true;
             rDir = e.target.getAttribute('data-dir');
@@ -150,53 +171,60 @@
             initW = box.offsetWidth; initH = box.offsetHeight; initTop = box.offsetTop;
             
             box.classList.add('fvp-touch-active');
-            e.stopPropagation(); e.preventDefault(); // Ngăn scroll tuyệt đối khi resize
+            e.stopPropagation(); e.preventDefault();
         };
         box.querySelectorAll('.fvp-resize-handle').forEach(h => on(h, 'mousedown touchstart', startResize));
 
-        // 3. GLOBAL MOVE (DRAG & RESIZE)
+        // --- GLOBAL MOVE ---
         on(document, 'mousemove touchmove', (e) => {
             if(!isDrag && !isResizing) return;
             
             const xy = getXY(e);
-            const deltaX = xy.x - startX;
-            const deltaY = xy.y - startY;
+            const dX = xy.x - startX;
+            const dY = xy.y - startY;
 
             if (isDrag) {
-                e.preventDefault(); // Chặn scroll trang khi đang kéo video
-                box.style.left = (initLeft + deltaX) + 'px';
-                box.style.top = (initTop + deltaY) + 'px';
+                e.preventDefault();
+                box.style.left = (initLeft + dX) + 'px';
+                box.style.top = (initTop + dY) + 'px';
                 box.style.right = 'auto'; box.style.bottom = 'auto';
             }
             
             if (isResizing) {
-                e.preventDefault(); // Chặn scroll trang khi resize
-                if(rDir === 'r') {
-                    box.style.width = Math.max(200, initW + deltaX) + 'px';
-                } else if(rDir === 't') {
-                    const newH = Math.max(120, initH - deltaY);
+                e.preventDefault();
+                // Resize Rộng (Right, Top-Right, Bottom-Right)
+                if (rDir.includes('r')) {
+                    box.style.width = Math.max(200, initW + dX) + 'px';
+                }
+                // Resize Cao (Top, Top-Right)
+                if (rDir === 't' || rDir === 'tr') {
+                    const newH = Math.max(120, initH - dY);
                     box.style.height = newH + 'px';
                     box.style.top = (initTop + (initH - newH)) + 'px';
+                }
+                // Resize Cao (Bottom-Right)
+                if (rDir === 'br') {
+                    box.style.height = Math.max(120, initH + dY) + 'px';
                 }
             }
         });
         
-        // 4. GLOBAL END
         on(document, 'mouseup touchend', () => { 
             isDrag = false; isResizing = false;
             box.classList.remove('fvp-touch-active');
         });
 
-        // --- CONTROLS EVENTS ---
+        // --- INTERACTION ---
         
-        // Mobile Tap to toggle controls (để overlay không tự tắt quá nhanh)
-        on(box, 'touchstart', () => {
-             box.classList.toggle('fvp-touch-active');
+        // Tap video to toggle controls
+        on(box, 'click touchstart', (e) => {
+             if(e.target === box || e.target.id === 'fvp-wrapper') box.classList.toggle('fvp-touch-active');
         });
 
         const btnClick = (id, fn) => on($(id), 'click touchend', (e) => { 
-            //e.preventDefault(); // Fix double fire
             e.stopPropagation(); 
+            // Chỉ preventDefault nếu là touchend để tránh click giả lập
+            if(e.type==='touchend') e.preventDefault(); 
             fn(e); 
         });
 
@@ -205,7 +233,6 @@
         
         on($('fvp-seek'), 'input', (e) => curVid && (curVid.currentTime = (e.target.value/100) * curVid.duration));
         
-        // Navigation Logic
         const switchVid = (dir) => {
             if(!curVid || videos.length <= 1) return;
             let idx = videos.indexOf(curVid);
@@ -216,7 +243,6 @@
         btnClick('fvp-prev', () => switchVid(-1));
         btnClick('fvp-next', () => switchVid(1));
 
-        // Volume & Speed & Fit
         const updVol = (v) => { $('fvp-mute').textContent = v==0?'🔇':(v<.5?'🔉':'🔊'); $('fvp-vol-val').textContent = Math.round(v*100)+'%'; };
         on($('fvp-vol'), 'input', (e) => { if(curVid) { curVid.volume = e.target.value; curVid.muted=false; updVol(curVid.volume); } });
         btnClick('fvp-mute', () => { if(curVid) { curVid.muted = !curVid.muted; $('fvp-vol').value = curVid.muted ? 0 : curVid.volume; updVol(curVid.muted ? 0 : curVid.volume); }});
@@ -228,13 +254,13 @@
             $('fvp-fit').textContent = ICONS[fitIdx];
         });
 
-        // Handle Popup toggle on Mobile (Touch vào icon thì hiện slider)
-        const togglePopup = (btnId) => {
-             const grp = $(btnId).parentNode.parentNode; // Lấy thẻ div.fvp-grp
-             if(grp.classList.contains('active')) grp.classList.remove('active');
-             else grp.classList.add('active');
+        // Mobile: Tap vào nút speed/vol để toggle popup
+        const togglePopup = (e) => {
+            const grp = e.target.closest('.fvp-grp');
+            if(grp) grp.classList.toggle('active');
         };
-        // Cần xử lý riêng cho touch để mở popup
+        on($('fvp-spd-btn'), 'touchstart', (e) => { e.preventDefault(); togglePopup(e); });
+        on($('fvp-mute'), 'touchstart', (e) => { /* Mute riêng, không toggle popup */ });
     }
 
     // --- 4. LOGIC ---
