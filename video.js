@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Video Fixed — FINAL (YT-safe)
+// @name         Video
 // @namespace    https://your.namespace
 // @version      1.6.1
 // @description  FINAL: Swipe seek + keyboard seek with ONE unified notice, YouTube fullscreen-safe (no clipping), smooth fade, smart fullscreen icon, audio boost. Polished & stable. (touch targets fixed)
