@@ -1,11 +1,9 @@
 // ==UserScript==
-// @name         Translate
+// @name         Inline Translate (Format Preserved) - Optimized
 // @namespace    vn.inline.translate.ctrl.swipe.groups
-// @version      2.3.0
-// @description  Shift/Alt (desktop) hoặc Vuốt ngang (mobile) để dịch. Hỗ trợ dịch theo nhóm, giữ nguyên định dạng xuống dòng. Fix VPN.
+// @version      2.4.0
+// @description  Shift/Alt/Ctrl (desktop) hoặc Vuốt (mobile) để dịch. Hỗ trợ tùy chỉnh hướng vuốt, phím tắt. Fix VPN.
 // @author       you
-// @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/translate.js
-// @downloadURL  https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/translate.js
 // @match        http://*/*
 // @match        https://*/*
 // @grant        GM_registerMenuCommand
@@ -29,57 +27,43 @@
     provider: 'google',      // 'google' | 'gemini'
     geminiKey: '',
     geminiModel: 'gemini-1.5-flash',
-    hotkey: 'shift',         // 'shift' | 'alt'
+    hotkey: 'shift',         // 'shift' | 'alt' | 'ctrl'
     swipeEnabled: true,
-    swipePx: 60,
-    swipeSlopeMax: 0.5,
-    swipeDir: 'both',
-    swipeVHMode: true,
-    scrubThrottleMs: 80,
+    swipeDir: 'both',        // 'left' | 'right' | 'both'
+    swipePx: 60,             // Tăng lên để tránh chạm nhầm (cũ: 60)
+    swipeSlopeMax: 0.4,      // Giảm xuống để yêu cầu vuốt ngang "thẳng" hơn (cũ: 0.5)
     fontScale: 0.95,
-    italic: true,
     mutedColor: '#00bfff',
     bgBlend: 'transparent',
     maxChars: 3000,
-    dedupeSeconds: 0.7,
-    showPanelOnStart: false
+    dedupeSeconds: 0.7
   };
-  const cfg = loadCfg();
+
+  let cfg = loadCfg();
   function loadCfg(){ try{ const s=GM_getValue(GLOBAL_KEY); return s?{...defaults,...JSON.parse(s)}:{...defaults}; }catch{ return {...defaults}; } }
   function saveCfg(){ GM_setValue(GLOBAL_KEY, JSON.stringify(cfg)); }
 
   // ========= Styles =========
   const style = document.createElement('style');
   style.textContent = `
-  :root{ --ilt-fs:${cfg.fontScale}em; --ilt-it:${cfg.italic?'italic':'normal'}; --ilt-fg:${cfg.mutedColor}; --ilt-bg:${cfg.bgBlend||'transparent'} }
-  .ilt-panel{position:fixed;z-index:2147483647;top:16px;right:16px;background:#1a1a1ae6;border:1px solid #444;border-radius:12px;padding:12px 14px;color:#eee;font:13px/1.4 system-ui,sans-serif;max-width:320px;backdrop-filter:blur(6px);box-shadow:0 4px 12px rgba(0,0,0,0.5)}
-  .ilt-panel h3{margin:0 0 10px;font-size:15px;font-weight:700;color:#fff}
-  .ilt-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0}
+  :root{ --ilt-fs:${cfg.fontScale}em; --ilt-fg:${cfg.mutedColor}; --ilt-bg:${cfg.bgBlend||'transparent'} }
+  .ilt-panel{position:fixed;z-index:2147483647;top:10px;right:10px;background:#1a1a1ae6;border:1px solid #444;border-radius:12px;padding:12px 14px;color:#eee;font:13px/1.4 system-ui,sans-serif;max-width:320px;backdrop-filter:blur(6px);box-shadow:0 4px 12px rgba(0,0,0,0.5); transform: scale(1); transition: opacity 0.2s;}
+  .ilt-panel h3{margin:0 0 10px;font-size:15px;font-weight:700;color:#fff;border-bottom:1px solid #444;padding-bottom:5px}
+  .ilt-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0}
   .ilt-row label{color:#ccc;flex:1}
-  .ilt-panel input, .ilt-panel select{background:#333;border:1px solid #555;color:#fff;border-radius:4px;padding:3px 6px;max-width:140px}
+  .ilt-panel input, .ilt-panel select{background:#333;border:1px solid #555;color:#fff;border-radius:4px;padding:4px 6px;max-width:140px}
   .ilt-panel button{width:100%;margin-top:10px;padding:8px;background:#0079d3;border:none;border-radius:4px;color:white;cursor:pointer;font-weight:600}
   .ilt-panel button:hover{background:#005fa3}
   
   .ilt-trans-container {
-      display: block;
-      margin: 8px 0 16px 0;
-      clear: both;
-      width: 100%;
-      animation: iltFadeIn 0.2s ease-out;
-      border-top: 1px dashed #444;
-      padding-top: 6px;
+      display: block; margin: 8px 0 16px 0; clear: both; width: 100%;
+      animation: iltFadeIn 0.2s ease-out; border-top: 1px dashed #444; padding-top: 6px;
   }
   .ilt-trans {
-      padding: 6px 12px;
-      border-left: 3px solid var(--ilt-fg);
-      background: var(--ilt-bg);
-      color: var(--ilt-fg);
-      font-style: var(--ilt-it);
-      font-size: var(--ilt-fs);
-      line-height: 1.6; /* Tăng line-height cho dễ đọc */
-      word-wrap: break-word;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      white-space: pre-wrap; /* QUAN TRỌNG: Giữ nguyên xuống dòng */
+      padding: 6px 12px; border-left: 3px solid var(--ilt-fg); background: var(--ilt-bg);
+      color: var(--ilt-fg); font-style: italic; font-size: var(--ilt-fs);
+      line-height: 1.6; word-wrap: break-word; font-family: system-ui, sans-serif;
+      white-space: pre-wrap;
   }
   .ilt-trans[data-state="loading"]{opacity:0.7}
   .ilt-meta{font-size:0.75em;opacity:0.6;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px}
@@ -87,20 +71,17 @@
   `;
   document.head.appendChild(style);
 
-  // ========= Block Detection =========
+  // ========= Block Detection & Logic =========
   
   function closestBlock(node){
     if(!node) return document.body;
     let el = node.nodeType===1 ? node : node.parentElement;
-    
     while(el && el!==document.body){ 
       const style = window.getComputedStyle(el);
-      const isContentBlock = /^(P|LI|H[1-6]|BLOCKQUOTE|TD|TH|PRE|FIGCAPTION|DIV)$/.test(el.tagName);
+      const isContentBlock = /^(P|LI|H[1-6]|BLOCKQUOTE|TD|TH|PRE|FIGCAPTION|DIV|SPAN)$/.test(el.tagName);
+      // Update: Cho phép inline-block hoặc block
       const isDisplayBlock = /(block|list-item|table|flex|grid)/.test(style.display);
-      
-      if (isContentBlock && isDisplayBlock) {
-          if (el.innerText.trim().length > 0) return el;
-      }
+      if (isContentBlock && isDisplayBlock && el.innerText.trim().length > 0) return el;
       el = el.parentElement; 
     }
     return document.body;
@@ -108,6 +89,7 @@
 
   function getTextAndOffset(x,y){
     let range, container;
+    // Fallback cho Firefox và Chrome cũ
     if (document.caretRangeFromPoint) {
         range = document.caretRangeFromPoint(x,y);
     } else if (document.caretPositionFromPoint) {
@@ -133,39 +115,27 @@
     return { text: fullText, container, offset };
   }
 
-  // ========= Aggregation Logic =========
-
+  // Gom nhóm sibling (Dành cho các trang web chia text thành nhiều thẻ P hoặc Div nhỏ)
   function expandSiblings(container, maxItems) {
       let collectedText = container.innerText.trim();
       let lastNode = container;
-      
       const validTags = /^(LI|P|DIV|H[1-6]|TD)$/;
-      if (!validTags.test(container.tagName)) {
-          return { text: collectedText, lastNode: container };
-      }
+      if (!validTags.test(container.tagName)) return { text: collectedText, lastNode: container };
 
       let next = container.nextElementSibling;
       let count = 1;
-
       while(next && count < maxItems) {
           const style = window.getComputedStyle(next);
-          if (style.display === 'none' || style.visibility === 'hidden') {
-              next = next.nextElementSibling;
-              continue;
-          }
+          if (style.display === 'none' || style.visibility === 'hidden') { next = next.nextElementSibling; continue; }
           if (next.tagName !== container.tagName) break;
-          
           const t = next.innerText.trim();
-          if (t) {
-              collectedText += "\n" + t; // Thêm \n để giữ format
-              lastNode = next; 
-              count++;
-          }
+          if (t) { collectedText += "\n" + t; lastNode = next; count++; }
           next = next.nextElementSibling;
       }
       return { text: collectedText, lastNode: lastNode };
   }
 
+  // Tách câu thông minh
   function getSentenceGroup(fullText, clickOffset, groupSize) {
       const sentenceRegex = /[^.!?]+([.!?]+|$)(?:\s+|$)/g;
       const sentences = [];
@@ -182,13 +152,12 @@
               targetIndex = i; break;
           }
       }
-      const startIndex = Math.floor(targetIndex / groupSize) * groupSize;
+      const startIndex = Math.max(0, targetIndex - Math.floor(groupSize/2)); // Lấy câu xung quanh vị trí click
       const endIndex = Math.min(startIndex + groupSize, sentences.length);
-      
       return sentences.slice(startIndex, endIndex).map(s => s.text).join('').trim();
   }
 
-  // ========= API =========
+  // ========= API Translate =========
   const recent = new Map();
   function tooSoon(text){
     const now=Date.now(), t=recent.get(text);
@@ -198,8 +167,8 @@
 
   async function translateAuto(text){
     if (cfg.provider === 'gemini') {
-      const target = looksVietnamese(text) ? 'en' : 'vi';
-      return { translated: await translateGemini(text, target), src: target==='en'?'vi':'auto' };
+      const target = looksVietnamese(text) ? 'English' : 'Vietnamese';
+      return { translated: await translateGemini(text, target), src: target==='English'?'vi':'en' };
     } else {
       const det = await translateGoogleMulti(text, 'vi');
       if (det.src && det.src.startsWith('vi')) return await translateGoogleMulti(text, 'en');
@@ -223,11 +192,8 @@
                     try {
                         const d = JSON.parse(res.responseText);
                         let out = '', src = d.src || d[2] || 'auto';
-                        // Google trả về mảng các câu, join bằng \n nếu cần thiết, 
-                        // nhưng thường google tự tách câu, ta cứ join '' vì text input đã có \n
-                        if (Array.isArray(d)) out = d[0].map(x => x[0]).join(''); 
+                        if (Array.isArray(d) && Array.isArray(d[0])) out = d[0].map(x => x[0]).join(''); 
                         else if (d.sentences) out = d.sentences.map(s => s.trans).join('');
-                        
                         if(out) resolve({translated: out, src}); else next();
                     } catch { next(); }
                 }, onerror: next, ontimeout: next
@@ -241,9 +207,7 @@
     return new Promise((resolve,reject)=>{
       if(!cfg.geminiKey) return reject('Missing Key');
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${cfg.geminiModel}:generateContent?key=${cfg.geminiKey}`;
-      // Thêm yêu cầu Preserve formatting
-      const prompt = `Translate to ${target === 'vi'?'Vietnamese':'English'}. Preserve original formatting and line breaks. Output translation only.\n\n${text}`;
-      
+      const prompt = `Translate to ${target}. Preserve formatting and line breaks.\n\n${text}`;
       GM_xmlhttpRequest({
         method:'POST', url: url, headers: {'Content-Type': 'application/json'},
         data: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
@@ -253,14 +217,11 @@
     });
   }
 
-  // ========= UI & Handlers =========
-  
+  // ========= UI Inject =========
   function toggleTranslate(anchorNode, textToTranslate){
     if (!anchorNode || !textToTranslate) return;
-    
     const next = anchorNode.nextElementSibling;
     if (next && next.classList.contains('ilt-trans-container')) { next.remove(); return; }
-    
     if (tooSoon(textToTranslate)) return;
 
     const wrap = document.createElement('div');
@@ -271,18 +232,13 @@
     div.innerHTML = `<div class="ilt-meta">Translating...</div>`;
     wrap.appendChild(div);
     
-    // Inject sau anchorNode (node cuối cùng của nhóm)
-    if (anchorNode.parentNode) {
-        anchorNode.parentNode.insertBefore(wrap, anchorNode.nextSibling);
-    } else {
-        anchorNode.appendChild(wrap);
-    }
+    if (anchorNode.parentNode) anchorNode.parentNode.insertBefore(wrap, anchorNode.nextSibling);
+    else anchorNode.appendChild(wrap);
 
     translateAuto(textToTranslate).then(({translated})=>{
       div.dataset.state = 'done';
-      // Chỉ escapeHTML, không replace \n vì CSS pre-wrap sẽ lo việc hiển thị
       div.innerHTML = `<div class="ilt-txt">${escapeHTML(translated)}</div>`;
-    }).catch(e=>{
+    }).catch(()=>{
       div.innerHTML = `<div class="ilt-meta" style="color:#ff6b6b">Error</div>`;
       setTimeout(()=>wrap.remove(), 2000);
     });
@@ -292,93 +248,179 @@
   function looksVietnamese(s){ return VI_CHARS.test(s); }
   function escapeHTML(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   
+  // ========= Interaction Logic =========
   let lastMouse = {x:0,y:0};
-  document.addEventListener('mousemove', e=>{lastMouse.x=e.clientX; lastMouse.y=e.clientY;}, {passive:true});
+  // Throttle mousemove để tiết kiệm hiệu năng
+  let ticking = false;
+  document.addEventListener('mousemove', e=>{
+      if(!ticking) {
+          window.requestAnimationFrame(()=> {
+              lastMouse.x = e.clientX;
+              lastMouse.y = e.clientY;
+              ticking = false;
+          });
+          ticking = true;
+      }
+  }, {passive:true});
 
   function handleTrigger(x, y) {
       const hit = getTextAndOffset(x, y);
       if (!hit) return;
 
-      let textToTrans = '';
-      let anchorNode = hit.container;
+      let text = '';
+      let anchor = hit.container;
 
       if (cfg.mode === 'paragraph') {
-          textToTrans = hit.text.slice(0, cfg.maxChars);
-      } 
-      else if (cfg.mode === 'group') {
-          const isShortBlock = hit.text.length < 200;
-          
-          if (isShortBlock) {
-             const expanded = expandSiblings(hit.container, cfg.groupSize);
-             textToTrans = expanded.text;
-             anchorNode = expanded.lastNode;
+          text = hit.text.slice(0, cfg.maxChars);
+      } else if (cfg.mode === 'group') {
+          if (hit.text.length < 200) {
+             const exp = expandSiblings(hit.container, cfg.groupSize);
+             text = exp.text; anchor = exp.lastNode;
           }
-          
-          if (!textToTrans || textToTrans.length <= hit.text.length) {
-              textToTrans = getSentenceGroup(hit.text, hit.offset, cfg.groupSize);
-              anchorNode = hit.container;
+          if (!text || text.length <= hit.text.length) {
+              text = getSentenceGroup(hit.text, hit.offset, cfg.groupSize);
+              anchor = hit.container;
           }
-      } 
-      else {
-          textToTrans = getSentenceGroup(hit.text, hit.offset, 1);
+      } else {
+          text = getSentenceGroup(hit.text, hit.offset, 1);
       }
-
-      if (textToTrans) toggleTranslate(anchorNode, textToTrans);
+      if (text) toggleTranslate(anchor, text);
   }
 
+  // Hotkey Handler
   document.addEventListener('keydown', e=>{
-    const k = cfg.hotkey==='shift'?'Shift':'Alt';
-    if(e.key===k && !e.repeat){
+    if (e.repeat) return;
+    const isShift = cfg.hotkey === 'shift' && e.shiftKey;
+    const isAlt = cfg.hotkey === 'alt' && e.altKey;
+    const isCtrl = cfg.hotkey === 'ctrl' && e.ctrlKey;
+
+    if(isShift || isAlt || isCtrl){
       const a = document.activeElement;
       if(a && (a.isContentEditable || /input|textarea/i.test(a.tagName))) return;
       handleTrigger(lastMouse.x, lastMouse.y);
     }
+    // Tổ hợp mở panel: Shift + Alt + X
     if(e.shiftKey && e.altKey && e.code==='KeyX') buildPanel();
   });
 
-  let sx=0, sy=0, isSwiping=false;
+  // Swipe Logic (Optimized)
+  let sx=0, sy=0, st=0;
   document.addEventListener('touchstart', e=>{
     if(!cfg.swipeEnabled || e.touches.length>1) return;
-    sx=e.touches[0].clientX; sy=e.touches[0].clientY; isSwiping=false;
+    sx=e.touches[0].clientX; sy=e.touches[0].clientY; st=Date.now();
   }, {passive:true});
-  document.addEventListener('touchmove', e=>{
-      if(!cfg.swipeEnabled || !sx) return;
-      const dx = e.touches[0].clientX - sx, dy = e.touches[0].clientY - sy;
-      if(Math.abs(dx) > 10 && Math.abs(dy) < Math.abs(dx)*cfg.swipeSlopeMax) isSwiping = true;
-  }, {passive:true});
+
   document.addEventListener('touchend', e=>{
-      if(!isSwiping) return;
-      if(Math.abs(e.changedTouches[0].clientX - sx) > cfg.swipePx) handleTrigger(sx, sy);
+      if(!cfg.swipeEnabled || !sx || (Date.now() - st > 500)) { sx=0; return; } // Timeout 500ms để tránh giữ quá lâu
+      
+      const ex = e.changedTouches[0].clientX;
+      const ey = e.changedTouches[0].clientY;
+      const dx = ex - sx;
+      const dy = ey - sy;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+
+      // Reset
       sx=0; sy=0;
+
+      // 1. Phải vuốt đủ dài (cfg.swipePx)
+      if (absDx < cfg.swipePx) return;
+      
+      // 2. Phải vuốt ngang "thẳng", không chéo quá (Slope check)
+      // Nếu dy/dx > slope nghĩa là đang vuốt dọc nhiều hơn ngang
+      if (absDy > absDx * cfg.swipeSlopeMax) return;
+
+      // 3. Kiểm tra hướng
+      let validDir = false;
+      if (cfg.swipeDir === 'both') validDir = true;
+      else if (cfg.swipeDir === 'right' && dx > 0) validDir = true; // Vuốt từ trái sang phải
+      else if (cfg.swipeDir === 'left' && dx < 0) validDir = true;  // Vuốt từ phải sang trái
+
+      if (validDir) {
+          // Dùng toạ độ bắt đầu (sx, sy) để xác định vị trí text
+          // (Lưu ý: e.changedTouches lúc end có thể lệch, nên dùng sx sy cũ hoặc lấy trung bình)
+          handleTrigger(ex - dx/2, ey - dy/2); 
+      }
   });
 
+  // ========= Settings Panel =========
   function buildPanel(){
       if(document.querySelector('.ilt-panel')) return;
       const p = document.createElement('div');
       p.className = 'ilt-panel';
+      
+      // HTML Settings
       p.innerHTML = `
-        <h3>Inline Translate Settings</h3>
+        <h3>Translate Settings</h3>
         <div class="ilt-row"><label>Provider</label><select id="p_prov"><option value="google">Google</option><option value="gemini">Gemini</option></select></div>
         <div class="ilt-row"><label>Mode</label><select id="p_mode"><option value="paragraph">Paragraph</option><option value="group">Group (Gom)</option><option value="sentence">Sentence</option></select></div>
-        <div class="ilt-row" id="row_grp"><label>Số câu/dòng</label><input id="p_grp" type="number" min="1" max="10" value="${cfg.groupSize}"></div>
-        <div class="ilt-row"><label>Gemini Key</label><input id="p_key" type="password" value="${cfg.geminiKey}"></div>
-        <div class="ilt-row"><label>Màu chữ</label><input id="p_col" type="color" value="${cfg.mutedColor}"></div>
-        <button id="p_save">Lưu</button>
+        <div class="ilt-row" id="row_grp"><label>Lines/Group</label><input id="p_grp" type="number" min="1" max="10"></div>
+        
+        <div class="ilt-row"><label>Hotkey</label>
+            <select id="p_hot">
+                <option value="shift">Shift</option>
+                <option value="alt">Alt</option>
+                <option value="ctrl">Ctrl</option>
+            </select>
+        </div>
+
+        <div class="ilt-row"><label>Swipe Dir</label>
+            <select id="p_swd">
+                <option value="both">Both (Trái/Phải)</option>
+                <option value="right">Right (Sang phải)</option>
+                <option value="left">Left (Sang trái)</option>
+                <option value="none">Disable</option>
+            </select>
+        </div>
+        
+        <div class="ilt-row"><label>Gemini Key</label><input id="p_key" type="password" placeholder="AI Key..."></div>
+        <div class="ilt-row"><label>Màu chữ</label><input id="p_col" type="color"></div>
+        <button id="p_save">Lưu & Reload</button>
       `;
       document.body.appendChild(p);
-      const elMode = p.querySelector('#p_mode'), elGrp = p.querySelector('#row_grp');
-      p.querySelector('#p_prov').value = cfg.provider;
-      elMode.value = cfg.mode;
-      const toggle = ()=>elGrp.style.display = elMode.value==='group'?'flex':'none';
-      elMode.onchange = toggle; toggle();
-      p.querySelector('#p_save').onclick = () => {
-          cfg.provider = p.querySelector('#p_prov').value;
-          cfg.mode = elMode.value;
-          cfg.groupSize = +p.querySelector('#p_grp').value || 3;
-          cfg.geminiKey = p.querySelector('#p_key').value;
-          cfg.mutedColor = p.querySelector('#p_col').value;
-          saveCfg(); p.remove(); location.reload(); 
+
+      // Populate Data
+      const $ = (s) => p.querySelector(s);
+      $('#p_prov').value = cfg.provider;
+      $('#p_mode').value = cfg.mode;
+      $('#p_grp').value = cfg.groupSize;
+      $('#p_hot').value = cfg.hotkey;
+      $('#p_swd').value = cfg.swipeEnabled ? cfg.swipeDir : 'none';
+      $('#p_key').value = cfg.geminiKey;
+      $('#p_col').value = cfg.mutedColor;
+
+      const toggleGrp = () => $('#row_grp').style.display = $('#p_mode').value==='group'?'flex':'none';
+      $('#p_mode').onchange = toggleGrp; toggleGrp();
+
+      $('#p_save').onclick = () => {
+          cfg.provider = $('#p_prov').value;
+          cfg.mode = $('#p_mode').value;
+          cfg.groupSize = +$('#p_grp').value || 3;
+          cfg.geminiKey = $('#p_key').value;
+          cfg.mutedColor = $('#p_col').value;
+          cfg.hotkey = $('#p_hot').value;
+          
+          const swVal = $('#p_swd').value;
+          if (swVal === 'none') {
+              cfg.swipeEnabled = false;
+          } else {
+              cfg.swipeEnabled = true;
+              cfg.swipeDir = swVal;
+          }
+
+          saveCfg();
+          p.remove();
+          // location.reload(); // Reload trang để áp dụng
+          alert('Saved! Refresh page to apply.');
       };
+      
+      // Click outside to close
+      document.addEventListener('click', function close(e){
+          if(!p.contains(e.target) && !e.shiftKey) {
+             p.remove(); document.removeEventListener('click', close);
+          }
+      }, {once:true, capture:true});
   }
+  
   if(typeof GM_registerMenuCommand !== 'undefined') GM_registerMenuCommand("Settings", buildPanel);
 })();
