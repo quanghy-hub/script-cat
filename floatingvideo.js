@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Floating
 // @namespace    http://tampermonkey.net/
-// @version      5.2
-// @description  Floating video player tối ưu cho mobile
+// @version      5.3
+// @description  Floating video player tối ưu cho mobile với xoay video
 // @author       Claude
 // @match        *://*/*
 // @grant        none
@@ -30,7 +30,13 @@
         #fvp-master-icon.fvp-idle { opacity: 0.4; }
         #fvp-master-icon:hover, #fvp-master-icon:active { opacity: 1; transform: scale(1.05); background: rgba(0,0,255,0.7); }
         
-        #fvp-badge { position: absolute; top: -2px; right: -2px; background: #ff3b30; color: #fff; font-size: 10px; font-weight: 700; min-width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 2px solid #000; }
+        #fvp-badge {
+            position: absolute; top: -2px; right: -2px;
+            background: #ff3b30; color: #fff; font-size: 10px; font-weight: 700;
+            min-width: 18px; height: 18px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 50%; border: 2px solid #000;
+        }
 
         /* Menu */
         #fvp-menu {
@@ -64,155 +70,309 @@
             touch-action: none; user-select: none; -webkit-user-select: none;
             overflow: hidden; will-change: transform, width, height;
         }
-        #fvp-wrapper { width: 100%; height: 100%; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-        #fvp-wrapper video { width: 100%!important; height: 100%!important; max-width: none!important; max-height: none!important; object-position: center!important; transition: transform 0.2s ease; }
+        #fvp-wrapper { 
+            width: 100%; height: 100%; 
+            background: #000; display: flex; 
+            align-items: center; justify-content: center; 
+            overflow: hidden; position: relative;
+        }
+        #fvp-wrapper video { 
+            width: 100%!important; 
+            height: 100%!important; 
+            max-width: none!important; 
+            max-height: none!important; 
+            object-position: center!important; 
+            transition: transform 0.3s ease;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
 
         /* Overlays */
         .fvp-overlay {
             position: absolute; left: 0; width: 100%; padding: 0 12px;
-            opacity: 1; transition: opacity .25s ease; z-index: 20;
+            opacity: 1; /* LUÔN HIỂN THỊ */
+            transition: opacity .25s ease; z-index: 20;
             display: flex; align-items: center; box-sizing: border-box;
             pointer-events: none;
         }
         .fvp-overlay > * { pointer-events: auto; }
 
         /* Drag Zones */
-        #fvp-head { top: 0; justify-content: flex-end; background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%); height: 40px; padding-top: 4px; }
+        #fvp-head {
+            top: 0; justify-content: flex-end;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%);
+            height: 40px; padding-top: 4px;
+        }
         #fvp-head-drag { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: move; touch-action: none; z-index: 1; }
         #fvp-left-drag { position: absolute; top: 40px; left: 0; bottom: 60px; width: 25px; z-index: 19; cursor: move; touch-action: none; background: transparent; }
         #fvp-close { z-index: 2; font-size: 18px; width: 32px; height: 32px; margin-right: -4px; }
 
-        /* Controls */
+        /* Controls - LUÔN HIỂN THỊ */
         #fvp-ctrl {
-            bottom: 0; background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.8) 100%);
-            padding: 12px 12px 8px 12px; flex-direction: column; justify-content: flex-end;
-            gap: 6px; height: 60px;
+            bottom: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.8) 100%);
+            padding: 12px 12px 8px 12px;
+            flex-direction: column; justify-content: flex-end;
+            gap: 6px;
+            height: 60px; /* Giảm chiều cao controls */
         }
         
-        /* Seek Bar với touch area mở rộng */
+        /* Time Display on Seek Bar - CẢI TIẾN */
         #fvp-seek-container {
-            position: relative; width: 100%; margin-bottom: 4px;
-            height: 24px; /* Tăng chiều cao touch area */
-            display: flex; align-items: center;
+            position: relative;
+            width: 100%;
+            margin-bottom: 4px;
         }
         
         #fvp-seek {
             width: 100%; height: 4px; 
             background: rgba(255,255,255,0.3);
             border-radius: 2px; -webkit-appearance: none; 
-            cursor: pointer; margin: 0; z-index: 2;
+            cursor: pointer; margin: 0;
+            z-index: 2;
             position: relative;
+            transition: height 0.15s ease;
+        }
+        #fvp-seek:hover, #fvp-seek:active {
+            height: 6px;
         }
         #fvp-seek::-webkit-slider-thumb {
-            -webkit-appearance: none; width: 18px; height: 18px; /* Tăng kích thước thumb */
+            -webkit-appearance: none; width: 14px; height: 14px;
             background: #fff; border-radius: 50%; border: 0;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.6); transition: transform .1s;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.5); 
+            transition: transform .15s ease, width .15s ease, height .15s ease;
         }
-        #fvp-seek:hover::-webkit-slider-thumb { transform: scale(1.3); }
+        #fvp-seek:hover::-webkit-slider-thumb, 
+        #fvp-seek:active::-webkit-slider-thumb { 
+            transform: scale(1.3); 
+            width: 16px; 
+            height: 16px; 
+        }
         
-        /* Touch overlay cho seek bar */
-        #fvp-seek-touch {
-            position: absolute;
-            top: -10px; bottom: -10px;
-            left: 0; right: 0;
-            z-index: 1;
-            cursor: pointer;
-        }
-
-        /* Time Display */
+        /* Time Display - CÙNG HÀNG VỚI SEEK BAR */
         #fvp-time-display {
-            position: absolute; top: -18px; left: 0; right: 0;
-            display: flex; justify-content: space-between;
-            font-size: 10px; color: rgba(255,255,255,0.8);
-            padding: 0 4px; pointer-events: none;
+            position: absolute;
+            top: -18px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: rgba(255,255,255,0.9);
+            padding: 0 2px;
+            pointer-events: none;
+            background: transparent;
         }
         #fvp-current-time, #fvp-duration {
-            background: rgba(0,0,0,0.5); padding: 1px 4px; border-radius: 2px;
+            background: rgba(0,0,0,0.6);
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-weight: 500;
+            backdrop-filter: blur(4px);
         }
 
-        /* Control Row */
+        /* Control Row - Tối ưu khoảng cách động */
         .fvp-control-row {
-            display: flex; width: 100%; align-items: center;
-            gap: 6px; justify-content: space-between;
-            flex-wrap: nowrap; min-height: 36px;
+            display: flex; width: 100%; 
+            align-items: center;
+            gap: 6px;
+            justify-content: space-between; /* Icon tự động giãn cách */
+            flex-wrap: nowrap;
+            min-height: 36px;
         }
         
-        .fvp-volume-container { display: flex; align-items: center; gap: 4px; flex-shrink: 0; min-width: 80px; }
-        
-        .fvp-volume-slider {
-            -webkit-appearance: none; height: 4px; width: 60px;
-            background: rgba(255,255,255,0.3); border-radius: 2px; cursor: pointer;
+        /* Volume container - bên trái */
+        .fvp-volume-container {
+            display: flex;
+            align-items: center;
+            gap: 4px;
             flex-shrink: 0;
+            min-width: 80px;
+        }
+        
+        /* Volume slider - Horizontal */
+        .fvp-volume-slider {
+            -webkit-appearance: none; 
+            height: 4px; 
+            width: 60px;
+            background: rgba(255,255,255,0.3);
+            border-radius: 2px; cursor: pointer;
+            flex-shrink: 0;
+            transition: height 0.15s ease;
+        }
+        .fvp-volume-slider:hover, .fvp-volume-slider:active {
+            height: 6px;
         }
         .fvp-volume-slider::-webkit-slider-thumb {
-            -webkit-appearance: none; width: 14px; height: 14px;
-            background: #fff; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+            -webkit-appearance: none; width: 12px; height: 12px;
+            background: #fff; border-radius: 50%; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+            transition: transform .1s;
         }
+        .fvp-volume-slider:hover::-webkit-slider-thumb { transform: scale(1.2); }
         
+        /* Icon group - bên phải */
         .fvp-icon-group {
-            display: flex; align-items: center; gap: 4px;
-            justify-content: flex-end; flex: 1; min-width: 0;
+            display: flex;
+            align-items: center;
+            gap: 4px; /* Khoảng cách nhỏ giữa các icon */
+            justify-content: flex-end;
+            flex-wrap: nowrap;
+            flex: 1;
+            min-width: 0;
         }
 
         .fvp-btn {
-            background: transparent; border: none; color: rgba(255,255,255,0.9);
-            cursor: pointer; font-size: 18px; min-width: 32px; min-height: 32px;
-            padding: 0; display: flex; align-items: center; justify-content: center;
+            background: transparent; border: none; 
+            color: rgba(255,255,255,0.9);
+            cursor: pointer; font-size: 18px; 
+            min-width: 32px; min-height: 32px;
+            padding: 0; display: flex; 
+            align-items: center; justify-content: center;
             border-radius: 6px; transition: background .15s, transform .1s;
             touch-action: manipulation; flex-shrink: 0;
         }
-        .fvp-btn:active, .fvp-btn:hover { background: rgba(255,255,255,0.2); transform: scale(0.95); color: #fff; }
+        .fvp-btn:active, .fvp-btn:hover { 
+            background: rgba(255,255,255,0.2); 
+            transform: scale(0.95); color: #fff; 
+        }
         
+        /* Các nút đặc biệt */
         #fvp-fit { font-size: 16px; }
         #fvp-zoom { font-size: 16px; font-weight: bold; }
         #fvp-full { font-size: 16px; }
+        #fvp-rotate { font-size: 16px; }
+        
+        /* Icon next/prev gọn hơn */
+        #fvp-prev, #fvp-next {
+            min-width: 28px;
+            min-height: 28px;
+            font-size: 16px;
+            padding: 2px;
+        }
 
         /* Resize Handles */
-        .fvp-resize-handle { position: absolute; z-index: 100; touch-action: none; background: transparent; }
+        .fvp-resize-handle { 
+            position: absolute; z-index: 100; 
+            touch-action: none; background: transparent; 
+        }
         .fvp-resize-r { top: 20px; right: -10px; bottom: 60px; width: 20px; cursor: e-resize; }
         .fvp-resize-b { bottom: 60px; left: 20px; right: 20px; height: 20px; cursor: s-resize; }
-        .fvp-resize-br { bottom: 60px; right: -10px; width: 30px; height: 30px; cursor: se-resize; z-index: 101; }
+        .fvp-resize-br { 
+            bottom: 60px; right: -10px; 
+            width: 30px; height: 30px; 
+            cursor: se-resize; z-index: 101; 
+        }
         .fvp-resize-br::after {
-            content: ''; position: absolute; bottom: 14px; right: 14px;
-            width: 8px; height: 8px; border-bottom: 2px solid rgba(255,255,255,0.5); 
-            border-right: 2px solid rgba(255,255,255,0.5); border-radius: 0 0 2px 0; pointer-events: none;
+            content: ''; position: absolute; 
+            bottom: 14px; right: 14px;
+            width: 8px; height: 8px; 
+            border-bottom: 2px solid rgba(255,255,255,0.5); 
+            border-right: 2px solid rgba(255,255,255,0.5);
+            border-radius: 0 0 2px 0; pointer-events: none;
         }
 
         /* Placeholder */
-        .fvp-ph { background: #111; border: 1px dashed #333; border-radius: 8px; display: flex; align-items: center; justify-content: center; opacity: 0.5; }
+        .fvp-ph { 
+            background: #111; border: 1px dashed #333; 
+            border-radius: 8px; display: flex; 
+            align-items: center; justify-content: center; 
+            opacity: 0.5; 
+        }
 
         /* Fullscreen mode */
-        #fvp-container:fullscreen { width: 100vw !important; height: 100vh !important; max-width: none !important; max-height: none !important; border-radius: 0 !important; background: #000; }
-        #fvp-container:fullscreen #fvp-wrapper { width: 100% !important; height: 100% !important; }
+        #fvp-container:fullscreen {
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: none !important;
+            max-height: none !important;
+            border-radius: 0 !important;
+            background: #000;
+        }
+        #fvp-container:fullscreen #fvp-wrapper {
+            width: 100% !important;
+            height: 100% !important;
+        }
 
-        /* Mobile optimization với touch area lớn hơn */
+        /* Mobile optimization - Tối ưu khoảng cách động */
         @media (max-width: 480px) {
-            #fvp-container { width: min(280px, calc(100vw - 20px)); height: 150px; }
-            .fvp-control-row { gap: 4px; }
-            .fvp-btn { min-width: 36px; min-height: 36px; font-size: 18px; } /* Tăng kích thước nút */
-            #fvp-ctrl { padding: 8px 8px 6px 8px; height: 55px; }
-            .fvp-volume-container { min-width: 70px; }
-            .fvp-volume-slider { width: 50px; }
-            .fvp-icon-group { gap: 4px; }
+            #fvp-container {
+                width: min(280px, calc(100vw - 20px));
+                height: 150px;
+            }
             
-            /* Tăng touch area cho seek bar trên mobile */
-            #fvp-seek-container { height: 32px; }
-            #fvp-seek-touch { top: -14px; bottom: -14px; }
-            #fvp-seek::-webkit-slider-thumb { width: 22px; height: 22px; }
+            .fvp-control-row {
+                gap: 4px;
+            }
+            
+            .fvp-btn {
+                min-width: 28px;
+                min-height: 28px;
+                font-size: 16px;
+            }
+            
+            #fvp-ctrl {
+                padding: 8px 8px 6px 8px;
+                height: 55px;
+            }
+            
+            .fvp-volume-container {
+                min-width: 60px;
+            }
+            
+            .fvp-volume-slider {
+                width: 40px;
+            }
+            
+            .fvp-icon-group {
+                gap: 3px;
+            }
+            
+            #fvp-prev, #fvp-next {
+                min-width: 26px;
+                min-height: 26px;
+                font-size: 14px;
+            }
         }
         
+        /* Mobile rất nhỏ */
         @media (max-width: 360px) {
-            .fvp-control-row { gap: 3px; }
-            .fvp-btn { min-width: 34px; min-height: 34px; font-size: 16px; }
-            #fvp-fit, #fvp-zoom, #fvp-full { font-size: 16px; }
-            .fvp-volume-slider { width: 40px; }
+            .fvp-control-row {
+                gap: 2px;
+            }
+            
+            .fvp-btn {
+                min-width: 26px;
+                min-height: 26px;
+                font-size: 14px;
+            }
+            
+            #fvp-fit, #fvp-zoom, #fvp-full, #fvp-rotate {
+                font-size: 14px;
+            }
+            
+            .fvp-volume-slider {
+                width: 35px;
+            }
+            
+            #fvp-prev, #fvp-next {
+                min-width: 24px;
+                min-height: 24px;
+                font-size: 13px;
+            }
         }
 
         /* Animation */
-        @keyframes fvp-fade-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        @keyframes fvp-fade-in { 
+            from { opacity: 0; transform: scale(0.95); } 
+            to { opacity: 1; transform: scale(1); } 
+        }
         #fvp-container { animation: fvp-fade-in .2s ease-out; }
     `;
-    const style = document.createElement('style'); style.textContent = css; document.head.appendChild(style);
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.appendChild(style);
 
     // --- UTILS ---
     const $ = (id) => document.getElementById(id);
@@ -224,25 +384,29 @@
     };
     
     const getCoord = (e) => {
-        if (e.touches && e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        else if (e.changedTouches && e.changedTouches.length > 0) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+        if (e.touches && e.touches.length > 0) {
+            return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        } else if (e.changedTouches && e.changedTouches.length > 0) {
+            return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+        }
         return { x: e.clientX, y: e.clientY };
     };
 
-    // Animation frame cho seek mượt mà
-    let rafId = null;
-    const updateSeekSmooth = () => {
-        if (!curVid || !curVid.duration) return;
-        const seek = $('fvp-seek');
-        if (seek) {
-            seek.value = (curVid.currentTime / curVid.duration) * 100;
-        }
-        $('fvp-current-time').textContent = formatTime(curVid.currentTime);
-        if (!curVid.paused && !curVid.ended) {
-            rafId = requestAnimationFrame(updateSeekSmooth);
-        }
+    // Request animation frame throttle for smooth seek
+    const rafThrottle = (fn) => {
+        let ticking = false;
+        return (...args) => {
+            if (!ticking) {
+                requestAnimationFrame(() => {
+                    fn(...args);
+                    ticking = false;
+                });
+                ticking = true;
+            }
+        };
     };
 
+    // Format time
     const formatTime = (seconds) => {
         const s = Math.floor(seconds);
         const m = Math.floor(s / 60);
@@ -250,7 +414,7 @@
         return `${m}:${ss < 10 ? '0' + ss : ss}`;
     };
 
-    let box, icon, menu, curVid, origPar, ph, videos = [], fitIdx = 0, zoomLevel = 1, isSeeking = false;
+    let box, icon, menu, curVid, origPar, ph, videos = [], fitIdx = 0, zoomLevel = 1, rotationAngle = 0;
     const FIT = ['contain', 'cover', 'fill'], FIT_ICONS = ['⤢', '🔍', '↔'];
 
     // --- MAIN STATE ---
@@ -260,10 +424,14 @@
         initX: 0, initY: 0, initW: 0, initH: 0,
         iconStartX: 0, iconStartY: 0,
         resizeDir: '',
-        idleIconTimer: null
+        idleIconTimer: null,
+        updateSeekThrottled: null,
+        originalBoxWidth: 0,
+        originalBoxHeight: 0
     };
 
     function init() {
+        // --- ICON ---
         icon = el('div', 'fvp-idle', `
             <svg viewBox="0 0 24 24" style="width:24px;fill:#fff">
                 <path d="M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z"/>
@@ -276,6 +444,7 @@
 
         menu = el('div'); menu.id = 'fvp-menu'; document.body.appendChild(menu);
 
+        // --- PLAYER BOX với controls tối ưu ---
         box = el('div', '', `
             <div id="fvp-wrapper"></div>
             <div id="fvp-left-drag"></div>
@@ -289,22 +458,27 @@
             </div>
 
             <div id="fvp-ctrl" class="fvp-overlay">
+                <!-- Seek bar với thời gian -->
                 <div id="fvp-seek-container">
                     <div id="fvp-time-display">
                         <span id="fvp-current-time">0:00</span>
                         <span id="fvp-duration">0:00</span>
                     </div>
-                    <div id="fvp-seek-touch"></div>
                     <input type="range" id="fvp-seek" min="0" max="100" value="0" title="Seek">
                 </div>
                 
+                <!-- Controls row - tối ưu khoảng cách -->
                 <div class="fvp-control-row">
+                    <!-- Volume bên trái -->
                     <div class="fvp-volume-container">
                         <button id="fvp-vol-btn" class="fvp-btn" title="Mute/Unmute">🔊</button>
-                        <input type="range" class="fvp-volume-slider" id="fvp-vol" min="0" max="1" step="0.05" value="1" title="Volume">
+                        <input type="range" class="fvp-volume-slider" id="fvp-vol" 
+                               min="0" max="1" step="0.05" value="1" title="Volume">
                     </div>
                     
+                    <!-- Icon group bên phải -->
                     <div class="fvp-icon-group">
+                        <button id="fvp-rotate" class="fvp-btn" title="Rotate 90°">↻</button>
                         <button id="fvp-fit" class="fvp-btn" title="Fit mode">⤢</button>
                         <button id="fvp-zoom" class="fvp-btn" title="Zoom video">+</button>
                         <button id="fvp-full" class="fvp-btn" title="Fullscreen">⛶</button>
@@ -316,15 +490,28 @@
         `);
         box.id = 'fvp-container'; 
         box.style.display = 'none';
+        
+        // Vị trí mặc định: giữa trái
         const defaultTop = Math.max(20, (window.innerHeight - 180) / 2);
         box.style.top = defaultTop + 'px';
         box.style.left = '20px';
+        
         document.body.appendChild(box);
+
+        // Khởi tạo throttled function cho seek mượt hơn
+        state.updateSeekThrottled = rafThrottle(() => {
+            if (!curVid || !curVid.duration) return;
+            const seek = $('fvp-seek');
+            if (seek) {
+                seek.value = (curVid.currentTime / curVid.duration) * 100;
+            }
+        });
 
         setupInteractions();
         resetIdle();
     }
 
+    // Toggle menu
     const toggleMenu = () => {
         resetIdle();
         const isShow = menu.style.display === 'flex';
@@ -349,19 +536,23 @@
         icon.classList.remove('fvp-idle');
         clearTimeout(state.idleIconTimer);
         state.idleIconTimer = setTimeout(() => {
-            if (icon && !state.isIconDrag) icon.classList.add('fvp-idle');
+            if (icon && !state.isIconDrag) {
+                icon.classList.add('fvp-idle');
+            }
         }, 3000);
     };
 
     function setupInteractions() {
         // --- DRAG LOGIC ---
         const startIconDrag = (e) => {
-            e.preventDefault(); e.stopPropagation();
+            e.preventDefault();
+            e.stopPropagation();
             resetIdle();
             const c = getCoord(e);
             state.isIconDrag = true;
             state.startX = c.x; state.startY = c.y;
             state.iconStartX = c.x; state.iconStartY = c.y;
+            
             const rect = icon.getBoundingClientRect();
             state.initX = rect.left; state.initY = rect.top;
         };
@@ -375,25 +566,31 @@
             const dx = c.x - state.startX;
             const dy = c.y - state.startY;
 
+            // Icon Move
             if(state.isIconDrag) {
                 let nx = state.initX + dx;
                 let ny = state.initY + dy;
                 nx = Math.max(10, Math.min(nx, window.innerWidth - 58));
                 ny = Math.max(10, Math.min(ny, window.innerHeight - 58));
-                icon.style.left = nx + 'px'; icon.style.top = ny + 'px';
-                icon.style.bottom = 'auto'; icon.style.right = 'auto';
+                icon.style.left = nx + 'px'; 
+                icon.style.top = ny + 'px';
+                icon.style.bottom = 'auto'; 
+                icon.style.right = 'auto';
                 resetIdle();
                 return;
             }
 
+            // Player Move
             if(state.isDrag) {
                 let nx = state.initX + dx;
                 let ny = state.initY + dy;
                 nx = Math.max(0, Math.min(nx, window.innerWidth - box.offsetWidth));
                 ny = Math.max(0, Math.min(ny, window.innerHeight - box.offsetHeight));
-                box.style.left = nx + 'px'; box.style.top = ny + 'px';
+                box.style.left = nx + 'px'; 
+                box.style.top = ny + 'px';
             }
             
+            // Resize
             if(state.isResize) {
                 if(state.resizeDir.includes('r') || state.resizeDir === 'br') {
                     box.style.width = Math.max(200, state.initW + dx) + 'px';
@@ -410,9 +607,16 @@
                 const dx = c.x - state.iconStartX;
                 const dy = c.y - state.iconStartY;
                 const dist = Math.sqrt(dx*dx + dy*dy);
-                if(dist < 8) toggleMenu();
+                
+                // Nếu di chuyển ít hơn 8px thì coi là click
+                if(dist < 8) {
+                    toggleMenu();
+                }
             }
-            state.isDrag = false; state.isResize = false; state.isIconDrag = false;
+
+            state.isDrag = false; 
+            state.isResize = false; 
+            state.isIconDrag = false; 
         };
         
         document.addEventListener('touchmove', move, {passive: true});
@@ -423,9 +627,13 @@
         // Player Drag Start
         const startDrag = (e) => {
             const c = getCoord(e);
-            state.isDrag = true; state.startX = c.x; state.startY = c.y;
-            state.initX = box.offsetLeft; state.initY = box.offsetTop;
-            e.preventDefault(); e.stopPropagation();
+            state.isDrag = true; 
+            state.startX = c.x; 
+            state.startY = c.y;
+            state.initX = box.offsetLeft; 
+            state.initY = box.offsetTop;
+            e.preventDefault(); 
+            e.stopPropagation();
         };
         
         ['fvp-head-drag', 'fvp-left-drag'].forEach(id => {
@@ -441,17 +649,30 @@
             const startResize = (e) => {
                 const c = getCoord(e);
                 state.isResize = true;
-                state.resizeDir = h.className.includes('br') ? 'br' : h.className.includes('b') ? 'b' : 'r';
-                state.startX = c.x; state.startY = c.y;
-                state.initW = box.offsetWidth; state.initH = box.offsetHeight;
-                e.preventDefault(); e.stopPropagation();
+                state.resizeDir = h.className.includes('br') ? 'br' : 
+                                 h.className.includes('b') ? 'b' : 'r';
+                state.startX = c.x; 
+                state.startY = c.y;
+                state.initW = box.offsetWidth; 
+                state.initH = box.offsetHeight;
+                e.preventDefault(); 
+                e.stopPropagation();
             };
             h.addEventListener('touchstart', startResize, {passive: false});
             h.addEventListener('mousedown', startResize);
         });
 
         // Button handlers
-        const btn = (id, fn) => $(id)?.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+        const btn = (id, fn) => {
+            const element = $(id);
+            if (element) {
+                element.addEventListener('click', (e) => { 
+                    e.stopPropagation(); 
+                    fn(); 
+                });
+            }
+        };
+        
         btn('fvp-close', restore);
         btn('fvp-prev', () => switchVid(-1));
         btn('fvp-next', () => switchVid(1));
@@ -461,71 +682,68 @@
             $('fvp-fit').textContent = FIT_ICONS[fitIdx];
         });
         
+        // Zoom button
         btn('fvp-zoom', () => {
             if (!curVid) return;
             zoomLevel = zoomLevel === 1 ? 1.5 : zoomLevel === 1.5 ? 2 : 1;
-            curVid.style.transform = `scale(${zoomLevel})`;
-            curVid.style.transformOrigin = 'center';
+            applyVideoTransform();
             $('fvp-zoom').textContent = zoomLevel === 1 ? '+' : zoomLevel === 1.5 ? '++' : '-';
             $('fvp-zoom').title = `Zoom ${zoomLevel}x`;
         });
         
+        // Rotate button - SỬA LỖI XOAY VIDEO
+        btn('fvp-rotate', () => {
+            if (!curVid) return;
+            rotationAngle = (rotationAngle + 90) % 360;
+            applyVideoTransform();
+            $('fvp-rotate').style.transform = `rotate(${rotationAngle}deg)`;
+            $('fvp-rotate').title = `Rotate ${rotationAngle}°`;
+            
+            // Điều chỉnh kích thước container khi xoay
+            adjustContainerForRotation();
+        });
+        
+        // Fullscreen button
         btn('fvp-full', toggleFullscreen);
         
+        // Volume button (mute/unmute)
         $('fvp-vol-btn').addEventListener('click', (e) => { 
             e.stopPropagation();
-            if(curVid) { curVid.muted = !curVid.muted; updateVolUI(); }
-        });
-
-        // Seek bar với cảm ứng mượt mà
-        const seekBar = $('fvp-seek');
-        const seekTouch = $('fvp-seek-touch');
-        
-        const startSeek = (e) => {
-            isSeeking = true;
-            if (rafId) cancelAnimationFrame(rafId);
-            handleSeek(e);
-            document.addEventListener('mousemove', handleSeek);
-            document.addEventListener('touchmove', handleSeek, {passive: true});
-            document.addEventListener('mouseup', endSeek);
-            document.addEventListener('touchend', endSeek, {passive: true});
-        };
-
-        const handleSeek = (e) => {
-            if (!curVid || !curVid.duration || !isSeeking) return;
-            const rect = seekBar.getBoundingClientRect();
-            const c = getCoord(e);
-            let percent = (c.x - rect.left) / rect.width;
-            percent = Math.max(0, Math.min(1, percent));
-            seekBar.value = percent * 100;
-            curVid.currentTime = percent * curVid.duration;
-            $('fvp-current-time').textContent = formatTime(curVid.currentTime);
-        };
-
-        const endSeek = () => {
-            isSeeking = false;
-            document.removeEventListener('mousemove', handleSeek);
-            document.removeEventListener('touchmove', handleSeek);
-            document.removeEventListener('mouseup', endSeek);
-            document.removeEventListener('touchend', endSeek);
-            if (!curVid.paused && !curVid.ended) {
-                rafId = requestAnimationFrame(updateSeekSmooth);
-            }
-        };
-
-        seekTouch.addEventListener('touchstart', startSeek, {passive: false});
-        seekTouch.addEventListener('mousedown', startSeek);
-        seekBar.addEventListener('input', (e) => {
-            if(curVid && curVid.duration) {
-                curVid.currentTime = (e.target.value/100) * curVid.duration;
-            }
-        });
-
-        // Volume slider với cảm ứng mượt mà
-        const volSlider = $('fvp-vol');
-        volSlider.addEventListener('input', (e) => { 
             if(curVid) { 
-                curVid.volume = parseFloat(e.target.value);
+                curVid.muted = !curVid.muted; 
+                updateVolUI(); 
+            }
+        });
+
+        // Seek bar với hiệu ứng mượt hơn
+        const seekBar = $('fvp-seek');
+        if (seekBar) {
+            seekBar.addEventListener('input', (e) => {
+                if(curVid && curVid.duration) {
+                    curVid.currentTime = (e.target.value/100) * curVid.duration;
+                }
+            });
+            
+            // Thêm hiệu ứng hover cho seek bar
+            seekBar.addEventListener('mousedown', () => {
+                seekBar.style.height = '6px';
+            });
+            seekBar.addEventListener('mouseup', () => {
+                seekBar.style.height = '4px';
+            });
+            seekBar.addEventListener('touchstart', () => {
+                seekBar.style.height = '6px';
+            });
+            seekBar.addEventListener('touchend', () => {
+                seekBar.style.height = '4px';
+            });
+        }
+
+        // Volume slider
+        $('fvp-vol').addEventListener('input', (e) => { 
+            if(curVid) { 
+                const value = parseFloat(e.target.value);
+                curVid.volume = value;
                 curVid.muted = false;
                 updateVolUI();
             } 
@@ -534,48 +752,150 @@
         // Click video to play/pause
         box.addEventListener('click', (e) => {
             if (e.target === box || e.target.id === 'fvp-wrapper' || e.target.id === 'fvp-head-drag') {
-                if (curVid) curVid.paused ? curVid.play() : curVid.pause();
+                if (curVid) {
+                    curVid.paused ? curVid.play() : curVid.pause();
+                }
             }
         });
+    }
+
+    function applyVideoTransform() {
+        if (!curVid) return;
+        
+        // Đảm bảo video luôn đầy đủ container
+        const wrapper = $('fvp-wrapper');
+        if (!wrapper) return;
+        
+        // Reset transform trước
+        curVid.style.transform = '';
+        
+        // Áp dụng rotation và zoom
+        let transform = '';
+        
+        if (rotationAngle !== 0) {
+            transform += `rotate(${rotationAngle}deg) `;
+        }
+        
+        if (zoomLevel !== 1) {
+            transform += `scale(${zoomLevel}) `;
+        }
+        
+        if (transform) {
+            curVid.style.transform = transform.trim();
+        }
+        
+        // Đặt transform origin là center để xoay đúng
+        curVid.style.transformOrigin = 'center center';
+        
+        // Điều chỉnh object-fit dựa trên góc xoay
+        if (rotationAngle === 90 || rotationAngle === 270) {
+            // Khi xoay 90 hoặc 270 độ, cần đảm bảo video hiển thị đầy đủ
+            curVid.style.objectFit = 'contain';
+        } else {
+            // Khi không xoay hoặc xoay 180 độ, dùng fit mode hiện tại
+            curVid.style.objectFit = FIT[fitIdx];
+        }
+    }
+
+    function adjustContainerForRotation() {
+        if (!box || !curVid) return;
+        
+        // Lưu kích thước gốc nếu chưa có
+        if (state.originalBoxWidth === 0) {
+            state.originalBoxWidth = box.offsetWidth;
+            state.originalBoxHeight = box.offsetHeight;
+        }
+        
+        // Nếu đang ở chế độ fullscreen, không điều chỉnh
+        if (document.fullscreenElement === box) return;
+        
+        if (rotationAngle === 90 || rotationAngle === 270) {
+            // Hoán đổi chiều rộng và chiều cao khi xoay 90/270 độ
+            const newWidth = Math.min(state.originalBoxHeight, window.innerWidth - 40);
+            const newHeight = Math.min(state.originalBoxWidth, window.innerHeight - 100);
+            
+            box.style.width = `${newWidth}px`;
+            box.style.height = `${newHeight}px`;
+            
+            // Đảm bảo không vượt quá màn hình
+            const rect = box.getBoundingClientRect();
+            if (rect.right > window.innerWidth) {
+                box.style.left = `${window.innerWidth - rect.width - 10}px`;
+            }
+            if (rect.bottom > window.innerHeight) {
+                box.style.top = `${window.innerHeight - rect.height - 10}px`;
+            }
+        } else {
+            // Khôi phục kích thước gốc
+            box.style.width = `${state.originalBoxWidth}px`;
+            box.style.height = `${state.originalBoxHeight}px`;
+        }
     }
 
     function updateVolUI() {
         if(!curVid) return;
         const v = curVid.muted ? 0 : curVid.volume;
         $('fvp-vol-btn').textContent = v == 0 ? '🔇' : (v < 0.5 ? '🔉' : '🔊');
-        if(!curVid.muted) $('fvp-vol').value = v;
+        if(!curVid.muted) {
+            $('fvp-vol').value = v;
+        }
     }
 
     function toggleFullscreen() {
         if (!document.fullscreenElement) {
-            box.requestFullscreen?.() || box.webkitRequestFullscreen?.() || 
-            box.mozRequestFullScreen?.() || box.msRequestFullscreen?.();
-            $('fvp-full').textContent = '⛶'; $('fvp-full').title = 'Exit fullscreen';
+            if (box.requestFullscreen) {
+                box.requestFullscreen();
+            } else if (box.webkitRequestFullscreen) {
+                box.webkitRequestFullscreen();
+            } else if (box.mozRequestFullScreen) {
+                box.mozRequestFullScreen();
+            } else if (box.msRequestFullscreen) {
+                box.msRequestFullscreen();
+            }
+            $('fvp-full').textContent = '⛶';
+            $('fvp-full').title = 'Exit fullscreen';
         } else {
-            document.exitFullscreen?.() || document.webkitExitFullscreen?.() || 
-            document.mozCancelFullScreen?.() || document.msExitFullscreen?.();
-            $('fvp-full').textContent = '⛶'; $('fvp-full').title = 'Fullscreen';
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            } else if (document.mozCancelFullScreen) {
+                document.mozCancelFullScreen();
+            } else if (document.msExitFullscreen) {
+                document.msExitFullscreen();
+            }
+            $('fvp-full').textContent = '⛶';
+            $('fvp-full').title = 'Fullscreen';
         }
     }
 
+    // Fullscreen change handler
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
     document.addEventListener('mozfullscreenchange', handleFullscreenChange);
     document.addEventListener('MSFullscreenChange', handleFullscreenChange);
 
     function handleFullscreenChange() {
-        if (!document.fullscreenElement && !document.webkitFullscreenElement && 
-            !document.mozFullScreenElement && !document.msFullscreenElement) {
-            $('fvp-full').textContent = '⛶'; $('fvp-full').title = 'Fullscreen';
+        if (!document.fullscreenElement && 
+            !document.webkitFullscreenElement && 
+            !document.mozFullScreenElement && 
+            !document.msFullscreenElement) {
+            $('fvp-full').textContent = '⛶';
+            $('fvp-full').title = 'Fullscreen';
         }
     }
 
     function getSortedVideos() {
         const all = Array.from(document.querySelectorAll('video, .fvp-ph'));
-        return all.filter(el => {
-            if(el.classList.contains('fvp-ph')) return curVid;
-            return el !== curVid && !el.closest('#fvp-wrapper');
+        const list = [];
+        all.forEach(el => {
+            if(el.classList.contains('fvp-ph')) { 
+                if(curVid) list.push(curVid); 
+            } else if(el !== curVid && !el.closest('#fvp-wrapper')) {
+                list.push(el);
+            }
         });
+        return list;
     }
 
     function switchVid(dir) {
@@ -588,62 +908,104 @@
 
     function restore() {
         if(!curVid) return;
-        if (origPar && ph) origPar.replaceChild(curVid, ph);
-        Object.assign(curVid.style, { width: '', height: '', objectFit: '', objectPosition: '', transform: '' });
-        if (rafId) cancelAnimationFrame(rafId);
-        box.style.display = 'none'; zoomLevel = 1; curVid = null;
+        if (origPar && ph) {
+            origPar.replaceChild(curVid, ph);
+        }
+        Object.assign(curVid.style, {
+            width: '', 
+            height: '', 
+            objectFit: '', 
+            objectPosition: '',
+            transform: ''
+        });
+        box.style.display = 'none';
+        zoomLevel = 1;
+        rotationAngle = 0;
+        state.originalBoxWidth = 0;
+        state.originalBoxHeight = 0;
+        curVid = null;
     }
 
     function float(v) {
         if(curVid && curVid !== v) restore();
         if(curVid === v) return;
+        
         if(!box) init();
         
-        origPar = v.parentNode; curVid = v;
+        origPar = v.parentNode; 
+        curVid = v;
+        
         ph = el('div', 'fvp-ph', `<div style="font-size:20px;opacity:.5">📺</div>`);
         ph.style.width = (v.offsetWidth || 300)+'px'; 
         ph.style.height = (v.offsetHeight || 200)+'px';
-        if (origPar) origPar.replaceChild(ph, v);
         
-        $('fvp-wrapper').innerHTML = ''; $('fvp-wrapper').appendChild(v);
-        v.style.objectFit = FIT[fitIdx]; v.style.objectPosition = 'center';
-        $('fvp-vol').value = v.volume; updateVolUI();
-        box.style.display = 'flex'; menu.style.display = 'none';
-        zoomLevel = 1; v.style.transform = 'scale(1)';
-        $('fvp-zoom').textContent = '+'; $('fvp-zoom').title = 'Zoom in';
+        if (origPar) {
+            origPar.replaceChild(ph, v);
+        }
         
-        // Setup video events với animation frame mượt mà
-        const updateTime = () => {
+        $('fvp-wrapper').innerHTML = '';
+        $('fvp-wrapper').appendChild(v);
+        
+        v.style.objectFit = FIT[fitIdx]; 
+        v.style.objectPosition = 'center';
+        
+        // Reset transform
+        zoomLevel = 1;
+        rotationAngle = 0;
+        applyVideoTransform();
+        
+        // Reset UI
+        $('fvp-zoom').textContent = '+';
+        $('fvp-zoom').title = 'Zoom in';
+        $('fvp-rotate').style.transform = '';
+        $('fvp-rotate').title = 'Rotate 90°';
+        
+        // Reset volume UI
+        $('fvp-vol').value = v.volume;
+        updateVolUI();
+        
+        box.style.display = 'flex'; 
+        menu.style.display = 'none';
+        
+        // Setup video events
+        const updateTimeDisplay = () => {
             if (v.duration && !isNaN(v.duration)) {
                 $('fvp-current-time').textContent = formatTime(v.currentTime);
+                $('fvp-duration').textContent = formatTime(v.duration);
+                state.updateSeekThrottled();
+            }
+        };
+        
+        // Xử lý thời gian đúng cách
+        v.ontimeupdate = updateTimeDisplay;
+        
+        // Update khi metadata loaded
+        v.onloadedmetadata = () => {
+            if (v.duration && !isNaN(v.duration)) {
                 $('fvp-duration').textContent = formatTime(v.duration);
             }
         };
         
-        v.ontimeupdate = updateTime;
-        v.onloadedmetadata = () => {
-            if (v.duration && !isNaN(v.duration)) $('fvp-duration').textContent = formatTime(v.duration);
-            updateTime();
-            if (!v.paused && !v.ended) rafId = requestAnimationFrame(updateSeekSmooth);
+        // Update ngay lập tức
+        if (v.readyState >= 1) {
+            updateTimeDisplay();
+        }
+        
+        // Setup ended event
+        v.onended = () => {
+            switchVid(1);
         };
         
-        v.onplay = () => {
-            if (!isSeeking) rafId = requestAnimationFrame(updateSeekSmooth);
-        };
-        
-        v.onpause = v.onended = () => {
-            if (rafId) cancelAnimationFrame(rafId);
-        };
-        
-        if (v.readyState >= 1) updateTime();
-        v.onended = () => switchVid(1);
-        
-        v.play().catch(e => console.log('Autoplay prevented'));
+        // Play video
+        v.play().catch(e => {
+            console.log('Autoplay prevented, waiting for user interaction');
+        });
     }
 
     function renderMenu() {
         const list = getSortedVideos();
-        menu.innerHTML = `<div style="padding:10px 16px;font-size:12px;color:#888;font-weight:600;border-bottom:1px solid rgba(255,255,255,0.05)">VIDEOS (${list.length})</div>`;
+        menu.innerHTML = `<div style="padding:10px 16px;font-size:12px;color:#888;font-weight:600;border-bottom:1px solid rgba(255,255,255,0.05)">
+            VIDEOS (${list.length})</div>`;
         
         list.forEach((v, i) => {
             const isActive = v === curVid;
@@ -658,17 +1020,23 @@
         });
         
         if (list.length === 0) {
-            const empty = el('div', 'fvp-menu-item', `<span>📹</span><span style="flex:1">No videos found</span>`);
-            empty.style.opacity = '0.5'; menu.appendChild(empty);
+            const empty = el('div', 'fvp-menu-item', `
+                <span>📹</span>
+                <span style="flex:1">No videos found</span>
+            `);
+            empty.style.opacity = '0.5';
+            menu.appendChild(empty);
         }
     }
 
+    // Periodically check for videos
     setInterval(() => {
         const list = getSortedVideos().filter(v => {
             if(v === curVid) return true;
             const r = v.getBoundingClientRect();
             return r.width > 50 && r.height > 50;
         });
+        
         if(icon) {
             const badge = $('fvp-badge');
             if (badge) {
@@ -678,6 +1046,10 @@
         }
     }, 3000);
 
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-    else init();
+    // Initialize on load
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
 })();
