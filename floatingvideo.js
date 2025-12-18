@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Floating Video Player Plus
+// @name         Floating Video
 // @namespace    http://tampermonkey.net/
-// @version      5.0
-// @description  Floating video player với fullscreen, zoom, controls luôn hiển thị. Tối ưu cho Chromium/mobile.
+// @version      5.1
+// @description  Floating video player tối ưu cho mobile
 // @author       Claude
 // @match        *://*/*
 // @grant        none
@@ -102,50 +102,33 @@
             height: 40px; padding-top: 4px;
         }
         #fvp-head-drag { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: move; touch-action: none; z-index: 1; }
-        #fvp-left-drag { position: absolute; top: 40px; left: 0; bottom: 80px; width: 25px; z-index: 19; cursor: move; touch-action: none; background: transparent; }
+        #fvp-left-drag { position: absolute; top: 40px; left: 0; bottom: 60px; width: 25px; z-index: 19; cursor: move; touch-action: none; background: transparent; }
         #fvp-close { z-index: 2; font-size: 18px; width: 32px; height: 32px; margin-right: -4px; }
 
         /* Controls - LUÔN HIỂN THỊ */
         #fvp-ctrl {
             bottom: 0;
-            background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.7) 100%);
+            background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.8) 100%);
             padding: 12px 12px 8px 12px;
             flex-direction: column; justify-content: flex-end;
-            gap: 8px;
-            height: 80px; /* Chiều cao cố định cho controls */
+            gap: 6px;
+            height: 60px; /* Giảm chiều cao controls */
         }
-        .fvp-row { 
-            display: flex; width: 100%; 
-            align-items: center; gap: 8px; 
-            flex-wrap: nowrap;
+        
+        /* Time Display on Seek Bar */
+        #fvp-seek-container {
+            position: relative;
+            width: 100%;
+            margin-bottom: 4px;
         }
-        .fvp-grp { 
-            display: flex; align-items: center; 
-            gap: 6px; flex: 1; 
-            justify-content: flex-end;
-            min-width: 0; /* Cho phép co lại */
-        }
-        .fvp-btn {
-            background: transparent; border: none; 
-            color: rgba(255,255,255,0.9);
-            cursor: pointer; font-size: 18px; 
-            min-width: 36px; min-height: 36px;
-            padding: 0; display: flex; 
-            align-items: center; justify-content: center;
-            border-radius: 8px; transition: background .15s, transform .1s;
-            touch-action: manipulation; flex-shrink: 0;
-        }
-        .fvp-btn:active, .fvp-btn:hover { 
-            background: rgba(255,255,255,0.2); 
-            transform: scale(0.95); color: #fff; 
-        }
-
-        /* Seek Bar */
+        
         #fvp-seek {
             width: 100%; height: 4px; 
             background: rgba(255,255,255,0.3);
             border-radius: 2px; -webkit-appearance: none; 
             cursor: pointer; margin: 0;
+            z-index: 2;
+            position: relative;
         }
         #fvp-seek::-webkit-slider-thumb {
             -webkit-appearance: none; width: 14px; height: 14px;
@@ -153,49 +136,100 @@
             box-shadow: 0 1px 4px rgba(0,0,0,0.5); transition: transform .1s;
         }
         #fvp-seek:hover::-webkit-slider-thumb { transform: scale(1.2); }
+        
+        /* Time Display */
+        #fvp-time-display {
+            position: absolute;
+            top: -18px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: rgba(255,255,255,0.8);
+            padding: 0 4px;
+            pointer-events: none;
+        }
+        #fvp-current-time, #fvp-duration {
+            background: rgba(0,0,0,0.5);
+            padding: 1px 4px;
+            border-radius: 2px;
+        }
 
-        /* HORIZONTAL SLIDERS - LUÔN HIỂN THỊ */
-        .fvp-h-slider-container {
-            display: flex; align-items: center; 
-            gap: 4px; flex-shrink: 1;
-            min-width: 80px; max-width: 120px;
+        /* Control Row - Tối ưu khoảng cách động */
+        .fvp-control-row {
+            display: flex; width: 100%; 
+            align-items: center;
+            gap: 6px;
+            justify-content: space-between; /* Icon tự động giãn cách */
+            flex-wrap: nowrap;
+            min-height: 36px;
         }
-        .fvp-h-slider-label {
-            font-size: 10px; color: rgba(255,255,255,0.8);
-            min-width: 28px; text-align: center;
-            font-weight: 600;
+        
+        /* Volume container - bên trái */
+        .fvp-volume-container {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-shrink: 0;
+            min-width: 80px;
         }
-        .fvp-h-slider {
+        
+        /* Volume slider - Horizontal */
+        .fvp-volume-slider {
             -webkit-appearance: none; 
-            height: 4px; flex: 1;
+            height: 4px; 
+            width: 60px;
             background: rgba(255,255,255,0.3);
             border-radius: 2px; cursor: pointer;
-            min-width: 40px;
+            flex-shrink: 0;
         }
-        .fvp-h-slider::-webkit-slider-thumb {
+        .fvp-volume-slider::-webkit-slider-thumb {
             -webkit-appearance: none; width: 12px; height: 12px;
             background: #fff; border-radius: 50%; 
             box-shadow: 0 1px 3px rgba(0,0,0,0.5);
         }
-
-        /* Time display */
-        #fvp-time {
-            font-size: 11px; font-family: sans-serif; 
-            color: rgba(255,255,255,0.8);
-            min-width: 50px; text-align: center; 
-            margin: 0 4px; pointer-events: none;
-            flex-shrink: 0;
+        
+        /* Icon group - bên phải */
+        .fvp-icon-group {
+            display: flex;
+            align-items: center;
+            gap: 4px; /* Khoảng cách nhỏ giữa các icon */
+            justify-content: flex-end;
+            flex-wrap: wrap;
+            flex: 1;
+            min-width: 0;
         }
+
+        .fvp-btn {
+            background: transparent; border: none; 
+            color: rgba(255,255,255,0.9);
+            cursor: pointer; font-size: 18px; 
+            min-width: 32px; min-height: 32px;
+            padding: 0; display: flex; 
+            align-items: center; justify-content: center;
+            border-radius: 6px; transition: background .15s, transform .1s;
+            touch-action: manipulation; flex-shrink: 0;
+        }
+        .fvp-btn:active, .fvp-btn:hover { 
+            background: rgba(255,255,255,0.2); 
+            transform: scale(0.95); color: #fff; 
+        }
+        
+        /* Các nút đặc biệt */
+        #fvp-fit { font-size: 16px; }
+        #fvp-zoom { font-size: 16px; font-weight: bold; }
+        #fvp-full { font-size: 16px; }
 
         /* Resize Handles */
         .fvp-resize-handle { 
             position: absolute; z-index: 100; 
             touch-action: none; background: transparent; 
         }
-        .fvp-resize-r { top: 20px; right: -10px; bottom: 80px; width: 20px; cursor: e-resize; }
-        .fvp-resize-b { bottom: 80px; left: 20px; right: 20px; height: 20px; cursor: s-resize; }
+        .fvp-resize-r { top: 20px; right: -10px; bottom: 60px; width: 20px; cursor: e-resize; }
+        .fvp-resize-b { bottom: 60px; left: 20px; right: 20px; height: 20px; cursor: s-resize; }
         .fvp-resize-br { 
-            bottom: 80px; right: -10px; 
+            bottom: 60px; right: -10px; 
             width: 30px; height: 30px; 
             cursor: se-resize; z-index: 101; 
         }
@@ -230,23 +264,59 @@
             height: 100% !important;
         }
 
-        /* Mobile optimization */
+        /* Mobile optimization - Tối ưu khoảng cách động */
         @media (max-width: 480px) {
             #fvp-container {
                 width: min(280px, calc(100vw - 20px));
-                height: 160px;
+                height: 150px;
             }
-            .fvp-h-slider-container {
-                min-width: 60px;
+            
+            .fvp-control-row {
+                gap: 4px;
             }
+            
             .fvp-btn {
-                min-width: 32px;
-                min-height: 32px;
+                min-width: 28px;
+                min-height: 28px;
                 font-size: 16px;
             }
+            
             #fvp-ctrl {
                 padding: 8px 8px 6px 8px;
-                height: 70px;
+                height: 55px;
+            }
+            
+            .fvp-volume-container {
+                min-width: 60px;
+            }
+            
+            .fvp-volume-slider {
+                width: 40px;
+            }
+            
+            .fvp-icon-group {
+                gap: 3px;
+            }
+        }
+        
+        /* Mobile rất nhỏ */
+        @media (max-width: 360px) {
+            .fvp-control-row {
+                gap: 2px;
+            }
+            
+            .fvp-btn {
+                min-width: 26px;
+                min-height: 26px;
+                font-size: 14px;
+            }
+            
+            #fvp-fit, #fvp-zoom, #fvp-full {
+                font-size: 14px;
+            }
+            
+            .fvp-volume-slider {
+                width: 35px;
             }
         }
 
@@ -261,7 +331,7 @@
     style.textContent = css;
     document.head.appendChild(style);
 
-    // --- OPTIMIZED UTILS ---
+    // --- UTILS ---
     const $ = (id) => document.getElementById(id);
     const el = (tag, c, html) => {
         const e = document.createElement(tag);
@@ -270,7 +340,6 @@
         return e;
     };
     
-    // Optimized coordinate getter
     const getCoord = (e) => {
         if (e.touches && e.touches.length > 0) {
             return { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -292,10 +361,18 @@
         };
     };
 
+    // Format time
+    const formatTime = (seconds) => {
+        const s = Math.floor(seconds);
+        const m = Math.floor(s / 60);
+        const ss = s % 60;
+        return `${m}:${ss < 10 ? '0' + ss : ss}`;
+    };
+
     let box, icon, menu, curVid, origPar, ph, videos = [], fitIdx = 0, zoomLevel = 1;
     const FIT = ['contain', 'cover', 'fill'], FIT_ICONS = ['⤢', '🔍', '↔'];
 
-    // --- MAIN STATE với performance optimization ---
+    // --- MAIN STATE ---
     let state = {
         isDrag: false, isResize: false, isIconDrag: false,
         startX: 0, startY: 0,
@@ -303,7 +380,6 @@
         iconStartX: 0, iconStartY: 0,
         resizeDir: '',
         idleIconTimer: null,
-        // Debounced functions
         updateSeekThrottled: null
     };
 
@@ -321,7 +397,7 @@
 
         menu = el('div'); menu.id = 'fvp-menu'; document.body.appendChild(menu);
 
-        // --- PLAYER BOX với controls mới ---
+        // --- PLAYER BOX với controls tối ưu ---
         box = el('div', '', `
             <div id="fvp-wrapper"></div>
             <div id="fvp-left-drag"></div>
@@ -335,42 +411,31 @@
             </div>
 
             <div id="fvp-ctrl" class="fvp-overlay">
-                <div class="fvp-row" style="margin-bottom:4px">
+                <!-- Seek bar với thời gian -->
+                <div id="fvp-seek-container">
+                    <div id="fvp-time-display">
+                        <span id="fvp-current-time">0:00</span>
+                        <span id="fvp-duration">0:00</span>
+                    </div>
                     <input type="range" id="fvp-seek" min="0" max="100" value="0" title="Seek">
                 </div>
                 
-                <div class="fvp-row">
-                    <button id="fvp-play" class="fvp-btn" title="Play/Pause">▶</button>
-                    <span id="fvp-time">0:00</span>
+                <!-- Controls row - tối ưu khoảng cách -->
+                <div class="fvp-control-row">
+                    <!-- Volume bên trái -->
+                    <div class="fvp-volume-container">
+                        <button id="fvp-vol-btn" class="fvp-btn" title="Mute/Unmute">🔊</button>
+                        <input type="range" class="fvp-volume-slider" id="fvp-vol" 
+                               min="0" max="1" step="0.05" value="1" title="Volume">
+                    </div>
                     
-                    <div class="fvp-grp">
-                        <button id="fvp-prev" class="fvp-btn" title="Previous video">⏮</button>
-                        <button id="fvp-next" class="fvp-btn" title="Next video">⏭</button>
-                        
-                        <!-- Speed Slider Horizontal -->
-                        <div class="fvp-h-slider-container">
-                            <span class="fvp-h-slider-label">Speed</span>
-                            <input type="range" class="fvp-h-slider" id="fvp-spd" 
-                                   min="0.25" max="3" step="0.25" value="1" title="Playback speed">
-                            <span class="fvp-h-slider-label" id="fvp-spd-val">1x</span>
-                        </div>
-                        
-                        <!-- Volume Slider Horizontal -->
-                        <div class="fvp-h-slider-container">
-                            <button id="fvp-vol-btn" class="fvp-btn" title="Mute/Unmute" style="min-width:24px">🔊</button>
-                            <input type="range" class="fvp-h-slider" id="fvp-vol" 
-                                   min="0" max="1" step="0.05" value="1" title="Volume">
-                            <span class="fvp-h-slider-label" id="fvp-vol-val">100</span>
-                        </div>
-                        
-                        <!-- Fit Mode -->
+                    <!-- Icon group bên phải -->
+                    <div class="fvp-icon-group">
                         <button id="fvp-fit" class="fvp-btn" title="Fit mode">⤢</button>
-                        
-                        <!-- Zoom Button -->
                         <button id="fvp-zoom" class="fvp-btn" title="Zoom video">+</button>
-                        
-                        <!-- Fullscreen Button -->
                         <button id="fvp-full" class="fvp-btn" title="Fullscreen">⛶</button>
+                        <button id="fvp-prev" class="fvp-btn" title="Previous">⏮</button>
+                        <button id="fvp-next" class="fvp-btn" title="Next">⏭</button>
                     </div>
                 </div>
             </div>
@@ -430,7 +495,7 @@
     };
 
     function setupInteractions() {
-        // --- DRAG LOGIC với passive listeners ---
+        // --- DRAG LOGIC ---
         const startIconDrag = (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -444,7 +509,6 @@
             state.initX = rect.left; state.initY = rect.top;
         };
 
-        // Sử dụng passive: false chỉ cho touchstart vì cần preventDefault
         icon.addEventListener('touchstart', startIconDrag, {passive: false});
         icon.addEventListener('mousedown', startIconDrag);
 
@@ -468,7 +532,7 @@
                 return;
             }
 
-            // Player Move - sử dụng transform cho performance
+            // Player Move
             if(state.isDrag) {
                 let nx = state.initX + dx;
                 let ny = state.initY + dy;
@@ -507,7 +571,6 @@
             state.isIconDrag = false; 
         };
         
-        // Sử dụng passive: true cho touchmove/mousemove để performance
         document.addEventListener('touchmove', move, {passive: true});
         document.addEventListener('mousemove', move);
         document.addEventListener('touchend', end, {passive: true});
@@ -563,7 +626,6 @@
         };
         
         btn('fvp-close', restore);
-        btn('fvp-play', () => curVid && (curVid.paused ? curVid.play() : curVid.pause()));
         btn('fvp-prev', () => switchVid(-1));
         btn('fvp-next', () => switchVid(1));
         btn('fvp-fit', () => {
@@ -575,11 +637,11 @@
         // Zoom button
         btn('fvp-zoom', () => {
             if (!curVid) return;
-            zoomLevel = zoomLevel === 1 ? 1.5 : 1;
+            zoomLevel = zoomLevel === 1 ? 1.5 : zoomLevel === 1.5 ? 2 : 1;
             curVid.style.transform = `scale(${zoomLevel})`;
             curVid.style.transformOrigin = 'center';
-            $('fvp-zoom').textContent = zoomLevel === 1 ? '+' : '-';
-            $('fvp-zoom').title = zoomLevel === 1 ? 'Zoom in' : 'Zoom out';
+            $('fvp-zoom').textContent = zoomLevel === 1 ? '+' : zoomLevel === 1.5 ? '++' : '-';
+            $('fvp-zoom').title = `Zoom ${zoomLevel}x`;
         });
         
         // Fullscreen button
@@ -601,15 +663,6 @@
             }
         });
 
-        // Speed slider
-        $('fvp-spd').addEventListener('input', (e) => { 
-            if(curVid) { 
-                const value = parseFloat(e.target.value);
-                curVid.playbackRate = value;
-                $('fvp-spd-val').textContent = value.toFixed(2) + 'x';
-            } 
-        });
-
         // Volume slider
         $('fvp-vol').addEventListener('input', (e) => { 
             if(curVid) { 
@@ -619,13 +672,21 @@
                 updateVolUI();
             } 
         });
+        
+        // Click video to play/pause
+        box.addEventListener('click', (e) => {
+            if (e.target === box || e.target.id === 'fvp-wrapper' || e.target.id === 'fvp-head-drag') {
+                if (curVid) {
+                    curVid.paused ? curVid.play() : curVid.pause();
+                }
+            }
+        });
     }
 
     function updateVolUI() {
         if(!curVid) return;
         const v = curVid.muted ? 0 : curVid.volume;
         $('fvp-vol-btn').textContent = v == 0 ? '🔇' : (v < 0.5 ? '🔉' : '🔊');
-        $('fvp-vol-val').textContent = Math.round(v*100);
         if(!curVid.muted) {
             $('fvp-vol').value = v;
         }
@@ -736,6 +797,7 @@
         v.style.objectFit = FIT[fitIdx]; 
         v.style.objectPosition = 'center';
         
+        // Reset volume UI
         $('fvp-vol').value = v.volume;
         updateVolUI();
         
@@ -748,23 +810,39 @@
         $('fvp-zoom').textContent = '+';
         $('fvp-zoom').title = 'Zoom in';
         
-        // Play video
-        v.play().catch(e => console.log('Autoplay prevented:', e));
-        
-        // Setup timeupdate với throttling
-        v.ontimeupdate = () => {
-            $('fvp-play').textContent = v.paused ? '▶' : '⏸';
-            if(v.duration) {
+        // Setup video events
+        const updateTimeDisplay = () => {
+            if (v.duration && !isNaN(v.duration)) {
+                $('fvp-current-time').textContent = formatTime(v.currentTime);
+                $('fvp-duration').textContent = formatTime(v.duration);
                 state.updateSeekThrottled();
-                const s = Math.floor(v.currentTime), m = Math.floor(s/60), ss = s%60;
-                $('fvp-time').textContent = `${m}:${ss<10?'0'+ss:ss}`;
             }
         };
+        
+        // Xử lý thời gian đúng cách
+        v.ontimeupdate = updateTimeDisplay;
+        
+        // Update khi metadata loaded
+        v.onloadedmetadata = () => {
+            if (v.duration && !isNaN(v.duration)) {
+                $('fvp-duration').textContent = formatTime(v.duration);
+            }
+        };
+        
+        // Update ngay lập tức
+        if (v.readyState >= 1) {
+            updateTimeDisplay();
+        }
         
         // Setup ended event
         v.onended = () => {
             switchVid(1);
         };
+        
+        // Play video
+        v.play().catch(e => {
+            console.log('Autoplay prevented, waiting for user interaction');
+        });
     }
 
     function renderMenu() {
