@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video
 // @namespace    https://your.namespace
-// @version      2.2.0
+// @version      2.4.0
 // @description  Swipe seek & Tap play/pause optimized for Chrome mobile
 // @match        *://*/*
 // @grant        GM_setValue
@@ -18,12 +18,12 @@
   /* ================= CONFIG ================= */
   const STORE = 'VF_FINAL_V2';
   const DEF = {
-    swipeLong: 0.25,
-    swipeShort: 0.12,
-    shortThreshold: 180,
+    swipeLong: 0.3,
+    swipeShort: 0.15,
+    shortThreshold: 200,
     forwardStep: 5,
     realtimePreview: true,
-    throttle: 10,
+    throttle: 15,          // Đã chỉnh mượt (60fps)
     noticeFontSize: 14,
     hotkeys: true,
     boost: true,
@@ -32,10 +32,10 @@
     fsAutoHide: true,
     fsHideMs: 5000,
     fsBottomOffset: 16,
-    minSwipeDistance: 40,  // Khoảng cách tối thiểu để tính là vuốt
+    minSwipeDistance: 30,  // Khoảng cách tối thiểu để tính là vuốt
     verticalTolerance: 80, // Dung sai dọc khi vuốt ngang
     diagonalThreshold: 1.5, // Tỷ lệ dx/dy tối thiểu
-    tapThreshold: 10       // [MỚI] Khoảng cách di chuyển tối đa để tính là chạm (Tap)
+    tapThreshold: 10       // Khoảng cách di chuyển tối đa để tính là chạm (Tap)
   };
 
   const cfg = {};
@@ -326,9 +326,13 @@
       e.preventDefault();
     }
 
+    // [UPDATED] Tính effectiveDx bằng cách trừ đi ngưỡng bắt đầu
+    // Giúp seek bắt đầu từ 0s thay vì nhảy cóc
+    const effectiveDx = dx > 0 ? dx - cfg.minSwipeDistance : dx + cfg.minSwipeDistance;
+
     const sens = touchState.video.duration <= cfg.shortThreshold
       ? cfg.swipeShort : cfg.swipeLong;
-    const delta = Math.round(dx * sens);
+    const delta = Math.round(effectiveDx * sens);
 
     showSeekNotice(touchState.video, delta);
 
@@ -380,9 +384,12 @@
           const isValidVertical = absDy <= cfg.verticalTolerance;
 
           if (isHorizontal && isValidDistance && isValidVertical) {
+            // [UPDATED] Áp dụng effectiveDx cho logic kết thúc
+            const effectiveDx = dx > 0 ? dx - cfg.minSwipeDistance : dx + cfg.minSwipeDistance;
+
             const sens = touchState.video.duration <= cfg.shortThreshold
               ? cfg.swipeShort : cfg.swipeLong;
-            const delta = Math.round(dx * sens);
+            const delta = Math.round(effectiveDx * sens);
             
             if (!cfg.realtimePreview) {
               const newTime = clamp(
