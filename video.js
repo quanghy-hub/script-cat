@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Video
 // @namespace    https://your.namespace
-// @version      2.0.0
-// @description  Swipe seek trên đúng video, an toàn với YouTube mobile
+// @version      2.2.0
+// @description  Swipe seek & Tap play/pause optimized for Chrome mobile
 // @match        *://*/*
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -18,13 +18,13 @@
   /* ================= CONFIG ================= */
   const STORE = 'VF_FINAL_V2';
   const DEF = {
-    swipeLong: 0.5,
-    swipeShort: 0.2,
-    shortThreshold: 300,
+    swipeLong: 0.25,
+    swipeShort: 0.12,
+    shortThreshold: 180,
     forwardStep: 5,
     realtimePreview: true,
-    throttle: 80,
-    noticeFontSize: 16,
+    throttle: 10,
+    noticeFontSize: 14,
     hotkeys: true,
     boost: true,
     boostLevel: 1,
@@ -32,8 +32,10 @@
     fsAutoHide: true,
     fsHideMs: 5000,
     fsBottomOffset: 16,
-    minSwipeDistance: 30,  // Khoảng cách tối thiểu để kích hoạt swipe
-    verticalTolerance: 50  // Dung sai vuốt dọc trước khi hủy
+    minSwipeDistance: 40,  // Khoảng cách tối thiểu để tính là vuốt
+    verticalTolerance: 80, // Dung sai dọc khi vuốt ngang
+    diagonalThreshold: 1.5, // Tỷ lệ dx/dy tối thiểu
+    tapThreshold: 10       // [MỚI] Khoảng cách di chuyển tối đa để tính là chạm (Tap)
   };
 
   const cfg = {};
@@ -64,22 +66,29 @@
 
     .vf-notice{
       position:absolute;
-      transform:translate(-50%,-50%) scale(.98);
-      background:rgba(0,0,0,.75);
+      top:12px;
+      right:12px;
+      transform:translateX(0) scale(.95);
+      background:rgba(0,0,0,.65);
       color:#fff;
-      padding:10px 16px;
-      border-radius:8px;
+      padding:6px 12px;
+      border-radius:6px;
       z-index:2147483647;
       pointer-events:none;
       white-space:nowrap;
       opacity:0;
-      transition:opacity .18s ease, transform .18s ease;
-      font-weight:600;
-      box-shadow:0 2px 8px rgba(0,0,0,.3);
+      transition:opacity .2s cubic-bezier(0.4, 0, 0.2, 1), 
+                  transform .2s cubic-bezier(0.4, 0, 0.2, 1);
+      font-weight:500;
+      font-size:13px;
+      letter-spacing:0.3px;
+      box-shadow:0 2px 6px rgba(0,0,0,.25);
+      backdrop-filter:blur(4px);
+      -webkit-backdrop-filter:blur(4px);
     }
     .vf-notice.show{
       opacity:1;
-      transform:translate(-50%,-50%) scale(1);
+      transform:translateX(0) scale(1);
     }
 
     .vf-overlay{
@@ -120,46 +129,44 @@
     return null;
   }
 
-  /* ================= SEEK NOTICE ================= */
+  /* ================= SEEK NOTICE (UPDATED) ================= */
   let noticeEl, hideTimer;
 
-  function showSeekNotice(video, deltaSec) {
+  // Cập nhật hàm này để hỗ trợ custom text/icon cho Play/Pause
+  function showSeekNotice(video, value, customIcon = null) {
     if (!video) return;
 
     const fs = currentFullscreenElement();
     const inFS = fs && (fs === video || fs.contains(video));
-    let container = inFS ? fs : document.body;
+    let container = inFS ? fs : (video.parentElement || document.body);
 
     if (!noticeEl || !container.contains(noticeEl)) {
       noticeEl && noticeEl.remove();
       noticeEl = document.createElement('div');
       noticeEl.className = 'vf-notice';
       noticeEl.style.fontSize = cfg.noticeFontSize + 'px';
+      
+      if (getComputedStyle(container).position === 'static') {
+        container.style.position = 'relative';
+      }
+      
       container.appendChild(noticeEl);
     }
 
-    const vr = video.getBoundingClientRect();
-    let cx, cy;
-
-    if (inFS) {
-      const fr = fs.getBoundingClientRect();
-      cx = vr.left - fr.left + vr.width / 2;
-      cy = vr.top  - fr.top  + vr.height / 2;
-      noticeEl.style.position = 'absolute';
+    let text = '';
+    if (customIcon) {
+        // Trường hợp Play/Pause
+        text = `${customIcon} ${value}`;
     } else {
-      cx = vr.left + vr.width / 2;
-      cy = vr.top  + vr.height / 2;
-      noticeEl.style.position = 'fixed';
+        // Trường hợp Seek (tua)
+        const icon = value >= 0 ? '▶' : '◀';
+        text = `${icon} ${value >= 0 ? '+' : ''}${value}s`;
     }
 
-    noticeEl.textContent =
-      (deltaSec >= 0 ? '▶▶ +' : '◀◀ -') + Math.abs(deltaSec) + 's';
-    noticeEl.style.left = cx + 'px';
-    noticeEl.style.top  = cy + 'px';
-
+    noticeEl.textContent = text;
     noticeEl.classList.add('show');
     clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => noticeEl.classList.remove('show'), 800);
+    hideTimer = setTimeout(() => noticeEl.classList.remove('show'), 700);
   }
 
   /* ================= FULLSCREEN BUTTON ================= */
@@ -250,7 +257,7 @@
     }
   }, true);
 
-  /* ================= TOUCH SWIPE - YOUTUBE SAFE ================= */
+  /* ================= TOUCH SWIPE & TAP - FULL VIDEO AREA ================= */
   const touchState = {
     active: false,
     video: null,
@@ -262,13 +269,7 @@
     cancelled: false
   };
 
-  function isYouTubeMobile() {
-    return window.location.hostname.includes('youtube.com') && 
-           /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  }
-
   function handleTouchStart(e) {
-    // Reset state
     touchState.active = false;
     touchState.cancelled = false;
     touchState.video = null;
@@ -279,20 +280,6 @@
     const video = getVideoAtPoint(touch.clientX, touch.clientY);
     
     if (!video || video.duration === 0) return;
-
-    // Trên YouTube mobile, chỉ kích hoạt nếu chạm ở giữa video
-    if (isYouTubeMobile()) {
-      const rect = video.getBoundingClientRect();
-      const relY = touch.clientY - rect.top;
-      const relX = touch.clientX - rect.left;
-      
-      // Tránh vùng controls (20% dưới cùng) và edges (15% hai bên)
-      if (relY > rect.height * 0.8 || 
-          relX < rect.width * 0.15 || 
-          relX > rect.width * 0.85) {
-        return;
-      }
-    }
 
     touchState.video = video;
     touchState.startX = touch.clientX;
@@ -313,18 +300,29 @@
     const touch = e.touches[0];
     const dx = touch.clientX - touchState.startX;
     const dy = touch.clientY - touchState.startY;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
 
-    // Hủy nếu vuốt dọc quá nhiều
-    if (Math.abs(dy) > cfg.verticalTolerance) {
+    // Chưa di chuyển đủ xa để tính là vuốt, nhưng có thể là tap (đợi touchend)
+    if (absDx < 5 && absDy < 5) return;
+
+    // Hủy nếu vuốt dọc quá nhiều (để cho phép scroll trang)
+    if (absDy > cfg.verticalTolerance) {
       touchState.cancelled = true;
       return;
     }
 
-    // Chỉ kích hoạt sau khi vuốt đủ xa
-    if (Math.abs(dx) < cfg.minSwipeDistance) return;
+    // Hủy nếu góc vuốt quá chéo
+    if (absDx > 0 && (absDx / (absDy + 1)) < cfg.diagonalThreshold) {
+      touchState.cancelled = true;
+      return;
+    }
+
+    // Chỉ kích hoạt seek sau khi vuốt đủ xa
+    if (absDx < cfg.minSwipeDistance) return;
 
     // Ngăn scroll khi đã xác định là horizontal swipe
-    if (Math.abs(dx) > Math.abs(dy)) {
+    if (absDx > absDy) {
       e.preventDefault();
     }
 
@@ -356,35 +354,55 @@
       const touch = e.changedTouches[0];
       const dx = touch.clientX - touchState.startX;
       const dy = touch.clientY - touchState.startY;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
 
-      // Chỉ apply seek nếu đủ khoảng cách và không bị hủy
-      if (Math.abs(dx) >= cfg.minSwipeDistance && 
-          Math.abs(dy) <= cfg.verticalTolerance) {
-        
-        const sens = touchState.video.duration <= cfg.shortThreshold
-          ? cfg.swipeShort : cfg.swipeLong;
-        const delta = Math.round(dx * sens);
-        
-        if (!cfg.realtimePreview) {
-          const newTime = clamp(
-            touchState.startTime + delta,
-            0,
-            touchState.video.duration
-          );
-          touchState.video.currentTime = newTime;
+      // --- LOGIC TAP (MỚI) ---
+      // Nếu di chuyển rất ít (dưới 10px), coi như là chạm (Tap)
+      if (absDx < cfg.tapThreshold && absDy < cfg.tapThreshold) {
+        if (touchState.video.paused) {
+            touchState.video.play().catch(()=>{}); // Catch lỗi autoplay policy nếu có
+            showSeekNotice(touchState.video, 'Play', '▶');
+        } else {
+            touchState.video.pause();
+            showSeekNotice(touchState.video, 'Pause', '⏸');
         }
-        
-        showSeekNotice(touchState.video, delta);
+        // Không e.preventDefault() ở đây để tránh chặn các hành vi click khác (như hiện controls gốc)
+        // Nếu bạn muốn chặn controls gốc của web hiện lên thì bỏ comment dòng dưới:
+        // e.preventDefault(); 
+      }
+      
+      // --- LOGIC SWIPE (CŨ) ---
+      else {
+          const isHorizontal = absDx > absDy && 
+                              (absDx / (absDy + 1)) >= cfg.diagonalThreshold;
+          const isValidDistance = absDx >= cfg.minSwipeDistance;
+          const isValidVertical = absDy <= cfg.verticalTolerance;
+
+          if (isHorizontal && isValidDistance && isValidVertical) {
+            const sens = touchState.video.duration <= cfg.shortThreshold
+              ? cfg.swipeShort : cfg.swipeLong;
+            const delta = Math.round(dx * sens);
+            
+            if (!cfg.realtimePreview) {
+              const newTime = clamp(
+                touchState.startTime + delta,
+                0,
+                touchState.video.duration
+              );
+              touchState.video.currentTime = newTime;
+            }
+            
+            showSeekNotice(touchState.video, delta);
+          }
       }
     }
 
-    // Reset
     touchState.active = false;
     touchState.video = null;
     touchState.cancelled = false;
   }
 
-  // Sử dụng passive:false cho touchmove để có thể preventDefault
   document.addEventListener('touchstart', handleTouchStart, { 
     capture: true, 
     passive: true 
@@ -392,7 +410,7 @@
   
   document.addEventListener('touchmove', handleTouchMove, { 
     capture: true, 
-    passive: false  // Cần false để preventDefault
+    passive: false
   });
   
   document.addEventListener('touchend', handleTouchEnd, { 
@@ -405,6 +423,6 @@
     passive: true 
   });
 
-  console.log('🎬 Video Swipe Controls loaded - YouTube Mobile Safe');
+  console.log('🎬 Video Controls: Swipe to Seek + Tap to Toggle');
 
 })();
