@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Translate
 // @namespace    vn.inline.translate.ctrl.swipe.groups
-// @version      2.4.0
-// @description   Fix VPN.
+// @version      2.5.0
+// @description  Fix VPN. Optimized for mobile/chromium.
 // @author       you
 // @match        http://*/*
 // @match        https://*/*
@@ -18,409 +18,184 @@
 
 (() => {
   'use strict';
+  const K = 'inline_t_cfg::GLOBAL';
+  const def = { mode: 'group', groupSize: 3, provider: 'google', geminiKey: '', geminiModel: 'gemini-1.5-flash', hotkey: 'shift', swipeEnabled: true, swipeDir: 'both', swipePx: 60, swipeSlopeMax: 0.4, fontScale: 0.95, mutedColor: '#00bfff', bgBlend: 'transparent', maxChars: 3000, dedupeSeconds: 0.7 };
+  let cfg = { ...def, ...JSON.parse(GM_getValue(K) || '{}') };
+  const save = () => GM_setValue(K, JSON.stringify(cfg));
 
-  // ========= Storage (GLOBAL) =========
-  const GLOBAL_KEY = 'inline_t_cfg::GLOBAL';
-  const defaults = {
-    mode: 'group',           // 'sentence' | 'paragraph' | 'group'
-    groupSize: 3,            // Số câu/dòng gom lại
-    provider: 'google',      // 'google' | 'gemini'
-    geminiKey: '',
-    geminiModel: 'gemini-1.5-flash',
-    hotkey: 'shift',         // 'shift' | 'alt' | 'ctrl'
-    swipeEnabled: true,
-    swipeDir: 'both',        // 'left' | 'right' | 'both'
-    swipePx: 60,             // Tăng lên để tránh chạm nhầm (cũ: 60)
-    swipeSlopeMax: 0.4,      // Giảm xuống để yêu cầu vuốt ngang "thẳng" hơn (cũ: 0.5)
-    fontScale: 0.95,
-    mutedColor: '#00bfff',
-    bgBlend: 'transparent',
-    maxChars: 3000,
-    dedupeSeconds: 0.7
-  };
+  const sty = document.createElement('style');
+  sty.textContent = `:root{--ilt-fs:${cfg.fontScale}em;--ilt-fg:${cfg.mutedColor};--ilt-bg:${cfg.bgBlend}}.ilt-panel{position:fixed;z-index:2147483647;top:10px;right:10px;background:#1a1a1ae6;border:1px solid #444;border-radius:12px;padding:12px;color:#eee;font:13px system-ui;max-width:320px;backdrop-filter:blur(6px)}.ilt-row{display:flex;justify-content:space-between;margin:8px 0;gap:10px}.ilt-panel input,.ilt-panel select{background:#333;border:1px solid #555;color:#fff;border-radius:4px;padding:4px;max-width:140px}.ilt-btn{width:100%;margin-top:10px;padding:8px;background:#0079d3;border:none;border-radius:4px;color:#fff;cursor:pointer}.ilt-trans-container{margin:8px 0;width:100%;animation:iF .2s;border-top:1px dashed #444;padding-top:6px}.ilt-trans{padding:6px 12px;border-left:3px solid var(--ilt-fg);background:var(--ilt-bg);color:var(--ilt-fg);font:italic var(--ilt-fs)/1.6 system-ui;white-space:pre-wrap}.ilt-meta{font-size:.75em;opacity:.6}@keyframes iF{from{transform:translateY(-5px);opacity:0}to{transform:none;opacity:1}}`;
+  document.head.appendChild(sty);
 
-  let cfg = loadCfg();
-  function loadCfg(){ try{ const s=GM_getValue(GLOBAL_KEY); return s?{...defaults,...JSON.parse(s)}:{...defaults}; }catch{ return {...defaults}; } }
-  function saveCfg(){ GM_setValue(GLOBAL_KEY, JSON.stringify(cfg)); }
+  // Logic
+  const isReddit = location.hostname.includes('reddit.com');
+  const R_DEEP = ['div[id$="-post-rtjson-content"]', '.md', '[data-post-click-location="text-body"] > div', '[slot="text-body"] div', '[slot="text-body"]'];
 
-  // ========= Styles =========
-  const style = document.createElement('style');
-  style.textContent = `
-  :root{ --ilt-fs:${cfg.fontScale}em; --ilt-fg:${cfg.mutedColor}; --ilt-bg:${cfg.bgBlend||'transparent'} }
-  .ilt-panel{position:fixed;z-index:2147483647;top:10px;right:10px;background:#1a1a1ae6;border:1px solid #444;border-radius:12px;padding:12px 14px;color:#eee;font:13px/1.4 system-ui,sans-serif;max-width:320px;backdrop-filter:blur(6px);box-shadow:0 4px 12px rgba(0,0,0,0.5); transform: scale(1); transition: opacity 0.2s;}
-  .ilt-panel h3{margin:0 0 10px;font-size:15px;font-weight:700;color:#fff;border-bottom:1px solid #444;padding-bottom:5px}
-  .ilt-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0}
-  .ilt-row label{color:#ccc;flex:1}
-  .ilt-panel input, .ilt-panel select{background:#333;border:1px solid #555;color:#fff;border-radius:4px;padding:4px 6px;max-width:140px}
-  .ilt-panel button{width:100%;margin-top:10px;padding:8px;background:#0079d3;border:none;border-radius:4px;color:white;cursor:pointer;font-weight:600}
-  .ilt-panel button:hover{background:#005fa3}
-  
-  .ilt-trans-container {
-      display: block; margin: 8px 0 16px 0; clear: both; width: 100%;
-      animation: iltFadeIn 0.2s ease-out; border-top: 1px dashed #444; padding-top: 6px;
-  }
-  .ilt-trans {
-      padding: 6px 12px; border-left: 3px solid var(--ilt-fg); background: var(--ilt-bg);
-      color: var(--ilt-fg); font-style: italic; font-size: var(--ilt-fs);
-      line-height: 1.6; word-wrap: break-word; font-family: system-ui, sans-serif;
-      white-space: pre-wrap;
-  }
-  .ilt-trans[data-state="loading"]{opacity:0.7}
-  .ilt-meta{font-size:0.75em;opacity:0.6;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px}
-  @keyframes iltFadeIn { from{opacity:0;transform:translateY(-5px)} to{opacity:1;transform:translateY(0)} }
-  `;
-  document.head.appendChild(style);
-
-  // ========= Block Detection & Logic =========
-  
-  function closestBlock(node){
-    if(!node) return document.body;
-    let el = node.nodeType===1 ? node : node.parentElement;
-    while(el && el!==document.body){ 
-      const style = window.getComputedStyle(el);
-      const isContentBlock = /^(P|LI|H[1-6]|BLOCKQUOTE|TD|TH|PRE|FIGCAPTION|DIV|SPAN)$/.test(el.tagName);
-      // Update: Cho phép inline-block hoặc block
-      const isDisplayBlock = /(block|list-item|table|flex|grid)/.test(style.display);
-      if (isContentBlock && isDisplayBlock && el.innerText.trim().length > 0) return el;
-      el = el.parentElement; 
-    }
-    return document.body;
-  }
-
-  function getTextAndOffset(x,y){
-    let range, container;
-    // Fallback cho Firefox và Chrome cũ
-    if (document.caretRangeFromPoint) {
-        range = document.caretRangeFromPoint(x,y);
-    } else if (document.caretPositionFromPoint) {
-        const p = document.caretPositionFromPoint(x,y);
-        if(p) { range=document.createRange(); range.setStart(p.offsetNode,p.offset); range.collapse(true); }
+  function getBlock(el) {
+    if (!el || el === document.body) return null;
+    // Reddit optimization
+    if (isReddit) {
+      if (el.closest('shreddit-post')) {
+        const p = el.closest('shreddit-post');
+        // Check Body
+        const b = p.querySelector('shreddit-post-text-body');
+        if (b) {
+          for (const s of R_DEEP) {
+            const c = b.querySelector(s);
+            if (c && c.innerText.trim()) return { t: c.innerText.trim(), n: c };
+          }
+          if (b.innerText.trim()) return { t: b.innerText.trim(), n: b };
+        }
+        // Check Title
+        const t = p.querySelector('[slot="title"]');
+        if (t && t.innerText.trim()) return { t: t.innerText.trim(), n: t };
+      }
+      if (el.closest('shreddit-comment')) {
+        const c = el.closest('shreddit-comment').querySelector('.md, [slot="comment"]');
+        if (c && c.innerText.trim()) return { t: c.innerText.trim(), n: c };
+      }
     }
 
-    if (!range) return null;
-    container = closestBlock(range.startContainer);
-    if (!container || container === document.body) return null;
+    // Generic
+    const valid = /^(P|LI|H[1-6]|BLOCKQUOTE|TD|TH|PRE|FIGCAPTION|DIV|SPAN|A|ARTICLE|LABEL)$/;
+    let cur = el;
+    while (cur && cur !== document.body) {
+      // Simple visibility check
+      if (cur.style.display === 'none') { cur = cur.parentElement; continue; }
+      const txt = (cur.innerText || '').trim();
+      if (valid.test(cur.tagName) && txt.length > 0 && txt.length < 5000) {
+        // Avoid massive containers unless explicitly text-heavy
+        if (cur.tagName === 'DIV' && txt.length > 500 && cur.children.length > 5) { cur = cur.parentElement; continue; }
+        return { t: txt, n: cur };
+      }
+      cur = cur.parentElement;
+    }
+    return null;
+  }
 
-    const fullText = container.innerText || container.textContent || '';
-    if (fullText.length < 1) return null;
+  function hit(x, y) {
+    // ElementsFromPoint to pierce overlays
+    const els = document.elementsFromPoint(x, y);
+    for (const el of els) {
+      if (el.closest('.ilt-trans-container') || (isReddit && el.tagName === 'A' && el.classList.contains('absolute'))) continue;
+      const b = getBlock(el);
+      if (b) return b;
+    }
+    return null;
+  }
 
-    let offset = 0;
+  // Translation
+  const cache = new Map();
+  async function trans(txt, node) {
+    const next = node.nextElementSibling;
+    if (next?.classList.contains('ilt-trans-container')) { next.remove(); return; }
+    if (Date.now() - (cache.get(txt) || 0) < cfg.dedupeSeconds * 1000) return;
+    cache.set(txt, Date.now());
+
+    const w = document.createElement('div'); w.className = 'ilt-trans-container';
+    w.innerHTML = `<div class="ilt-trans" data-s="load"><div class="ilt-meta">...</div></div>`;
+    node.parentNode.insertBefore(w, node.nextSibling);
+
     try {
-        const preCaretRange = range.cloneRange();
-        preCaretRange.selectNodeContents(container);
-        preCaretRange.setEnd(range.endContainer, range.endOffset);
-        offset = preCaretRange.toString().length;
-    } catch(e) { offset = 0; }
-
-    return { text: fullText, container, offset };
-  }
-
-  // Gom nhóm sibling (Dành cho các trang web chia text thành nhiều thẻ P hoặc Div nhỏ)
-  function expandSiblings(container, maxItems) {
-      let collectedText = container.innerText.trim();
-      let lastNode = container;
-      const validTags = /^(LI|P|DIV|H[1-6]|TD)$/;
-      if (!validTags.test(container.tagName)) return { text: collectedText, lastNode: container };
-
-      let next = container.nextElementSibling;
-      let count = 1;
-      while(next && count < maxItems) {
-          const style = window.getComputedStyle(next);
-          if (style.display === 'none' || style.visibility === 'hidden') { next = next.nextElementSibling; continue; }
-          if (next.tagName !== container.tagName) break;
-          const t = next.innerText.trim();
-          if (t) { collectedText += "\n" + t; lastNode = next; count++; }
-          next = next.nextElementSibling;
-      }
-      return { text: collectedText, lastNode: lastNode };
-  }
-
-  // Tách câu thông minh
-  function getSentenceGroup(fullText, clickOffset, groupSize) {
-      const sentenceRegex = /[^.!?]+([.!?]+|$)(?:\s+|$)/g;
-      const sentences = [];
-      let match;
-      while ((match = sentenceRegex.exec(fullText)) !== null) {
-          sentences.push({ text: match[0], start: match.index, end: match.index + match[0].length });
-      }
-      if (sentences.length === 0) return fullText;
-
-      let targetIndex = 0;
-      for (let i = 0; i < sentences.length; i++) {
-          if ((clickOffset >= sentences[i].start && clickOffset < sentences[i].end) || 
-              (i === sentences.length - 1 && clickOffset >= sentences[i].end)) {
-              targetIndex = i; break;
-          }
-      }
-      const startIndex = Math.max(0, targetIndex - Math.floor(groupSize/2)); // Lấy câu xung quanh vị trí click
-      const endIndex = Math.min(startIndex + groupSize, sentences.length);
-      return sentences.slice(startIndex, endIndex).map(s => s.text).join('').trim();
-  }
-
-  // ========= API Translate =========
-  const recent = new Map();
-  function tooSoon(text){
-    const now=Date.now(), t=recent.get(text);
-    if(t && now-t < cfg.dedupeSeconds*1000) return true;
-    recent.set(text, now); return false;
-  }
-
-  async function translateAuto(text){
-    if (cfg.provider === 'gemini') {
-      const target = looksVietnamese(text) ? 'English' : 'Vietnamese';
-      return { translated: await translateGemini(text, target), src: target==='English'?'vi':'en' };
-    } else {
-      const det = await translateGoogleMulti(text, 'vi');
-      if (det.src && det.src.startsWith('vi')) return await translateGoogleMulti(text, 'en');
-      return det;
-    }
-  }
-
-  function translateGoogleMulti(text, target) {
-    const urls = [
-        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${target}&dt=t&q=${encodeURIComponent(text)}`,
-        `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=${target}&q=${encodeURIComponent(text)}`
-    ];
-    return new Promise((resolve, reject) => {
-        let att = 0;
-        const next = () => {
-            if (att >= urls.length) return reject("Google Fail");
-            GM_xmlhttpRequest({
-                method: 'GET', url: urls[att++], timeout: 10000,
-                onload: res => {
-                    if (res.status !== 200) return next();
-                    try {
-                        const d = JSON.parse(res.responseText);
-                        let out = '', src = d.src || d[2] || 'auto';
-                        if (Array.isArray(d) && Array.isArray(d[0])) out = d[0].map(x => x[0]).join(''); 
-                        else if (d.sentences) out = d.sentences.map(s => s.trans).join('');
-                        if(out) resolve({translated: out, src}); else next();
-                    } catch { next(); }
-                }, onerror: next, ontimeout: next
-            });
-        };
-        next();
-    });
-  }
-
-  function translateGemini(text, target){
-    return new Promise((resolve,reject)=>{
-      if(!cfg.geminiKey) return reject('Missing Key');
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${cfg.geminiModel}:generateContent?key=${cfg.geminiKey}`;
-      const prompt = `Translate to ${target}. Preserve formatting and line breaks.\n\n${text}`;
-      GM_xmlhttpRequest({
-        method:'POST', url: url, headers: {'Content-Type': 'application/json'},
-        data: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-        onload: res=>{ try{ resolve(JSON.parse(res.responseText).candidates[0].content.parts[0].text.trim()); }catch(e){ reject(e); } },
-        onerror: reject
-      });
-    });
-  }
-
-  // ========= UI Inject =========
-  function toggleTranslate(anchorNode, textToTranslate){
-    if (!anchorNode || !textToTranslate) return;
-    const next = anchorNode.nextElementSibling;
-    if (next && next.classList.contains('ilt-trans-container')) { next.remove(); return; }
-    if (tooSoon(textToTranslate)) return;
-
-    const wrap = document.createElement('div');
-    wrap.className = 'ilt-trans-container';
-    const div = document.createElement('div');
-    div.className = 'ilt-trans';
-    div.dataset.state = 'loading';
-    div.innerHTML = `<div class="ilt-meta">Translating...</div>`;
-    wrap.appendChild(div);
-    
-    if (anchorNode.parentNode) anchorNode.parentNode.insertBefore(wrap, anchorNode.nextSibling);
-    else anchorNode.appendChild(wrap);
-
-    translateAuto(textToTranslate).then(({translated})=>{
-      div.dataset.state = 'done';
-      div.innerHTML = `<div class="ilt-txt">${escapeHTML(translated)}</div>`;
-    }).catch(()=>{
-      div.innerHTML = `<div class="ilt-meta" style="color:#ff6b6b">Error</div>`;
-      setTimeout(()=>wrap.remove(), 2000);
-    });
-  }
-
-  const VI_CHARS = /[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i;
-  function looksVietnamese(s){ return VI_CHARS.test(s); }
-  function escapeHTML(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-  
-  // ========= Interaction Logic =========
-  let lastMouse = {x:0,y:0};
-  // Throttle mousemove để tiết kiệm hiệu năng
-  let ticking = false;
-  document.addEventListener('mousemove', e=>{
-      if(!ticking) {
-          window.requestAnimationFrame(()=> {
-              lastMouse.x = e.clientX;
-              lastMouse.y = e.clientY;
-              ticking = false;
-          });
-          ticking = true;
-      }
-  }, {passive:true});
-
-  function handleTrigger(x, y) {
-      const hit = getTextAndOffset(x, y);
-      if (!hit) return;
-
-      let text = '';
-      let anchor = hit.container;
-
-      if (cfg.mode === 'paragraph') {
-          text = hit.text.slice(0, cfg.maxChars);
-      } else if (cfg.mode === 'group') {
-          if (hit.text.length < 200) {
-             const exp = expandSiblings(hit.container, cfg.groupSize);
-             text = exp.text; anchor = exp.lastNode;
-          }
-          if (!text || text.length <= hit.text.length) {
-              text = getSentenceGroup(hit.text, hit.offset, cfg.groupSize);
-              anchor = hit.container;
-          }
+      let res;
+      if (cfg.provider === 'gemini' && cfg.geminiKey) {
+        const t = /[àáảãạăằắẳẵặâầấẩẫậ]/.test(txt) ? 'English' : 'Vietnamese';
+        const r = await new Promise((ok, err) => GM_xmlhttpRequest({
+          method: 'POST', url: `https://generativelanguage.googleapis.com/v1beta/models/${cfg.geminiModel}:generateContent?key=${cfg.geminiKey}`,
+          headers: { 'Content-Type': 'application/json' },
+          data: JSON.stringify({ contents: [{ parts: [{ text: `Translate to ${t}:\n${txt}` }] }] }),
+          onload: e => { try { ok(JSON.parse(e.responseText).candidates[0].content.parts[0].text.trim()) } catch (x) { err(x) } }, onerror: err
+        }));
+        res = r;
       } else {
-          text = getSentenceGroup(hit.text, hit.offset, 1);
+        const u1 = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=vi&dt=t&q=${encodeURIComponent(txt)}`;
+        const r1 = await new Promise(ok => GM_xmlhttpRequest({ method: 'GET', url: u1, onload: e => ok(JSON.parse(e.responseText)) }));
+        let out = r1[0].map(x => x[0]).join('');
+        if (r1[2] === 'vi') { // Was VI, trans to EN
+          const u2 = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(txt)}`;
+          const r2 = await new Promise(ok => GM_xmlhttpRequest({ method: 'GET', url: u2, onload: e => ok(JSON.parse(e.responseText)) }));
+          out = r2[0].map(x => x[0]).join('');
+        }
+        res = out;
       }
-      if (text) toggleTranslate(anchor, text);
+      w.firstChild.innerHTML = `<div class="ilt-txt">${res.replace(/[&<]/g, c => ({ '&': '&amp;', '<': '&lt;' }[c]))}</div>`;
+    } catch (e) { w.innerText = 'Err'; setTimeout(() => w.remove(), 2000); }
   }
 
-  // Hotkey Handler
-  document.addEventListener('keydown', e=>{
-    if (e.repeat) return;
-    const isShift = cfg.hotkey === 'shift' && e.shiftKey;
-    const isAlt = cfg.hotkey === 'alt' && e.altKey;
-    const isCtrl = cfg.hotkey === 'ctrl' && e.ctrlKey;
+  // Input
+  let lx = 0, ly = 0;
+  if (!('ontouchstart' in window)) {
+    document.addEventListener('mousemove', e => { lx = e.clientX; ly = e.clientY; }, { passive: true });
+  }
 
-    if(isShift || isAlt || isCtrl){
-      const a = document.activeElement;
-      if(a && (a.isContentEditable || /input|textarea/i.test(a.tagName))) return;
-      handleTrigger(lastMouse.x, lastMouse.y);
+  function act(x, y) {
+    const h = hit(x, y);
+    if (h) trans(h.t, h.n);
+  }
+
+  document.addEventListener('keydown', e => {
+    const k = cfg.hotkey;
+    if ((k === 'shift' && e.shiftKey) || (k === 'alt' && e.altKey) || (k === 'ctrl' && e.ctrlKey)) {
+      if (!/INPUT|TEXTAREA/.test(document.activeElement.tagName)) act(lx, ly);
     }
-    // Tổ hợp mở panel: Shift + Alt + X
-    if(e.shiftKey && e.altKey && e.code==='KeyX') buildPanel();
+    if (e.shiftKey && e.altKey && e.code === 'KeyX') ui();
   });
 
-  // Swipe Logic (Optimized)
-  let sx=0, sy=0, st=0;
-  document.addEventListener('touchstart', e=>{
-    if(!cfg.swipeEnabled || e.touches.length>1) return;
-    sx=e.touches[0].clientX; sy=e.touches[0].clientY; st=Date.now();
-  }, {passive:true});
-
-  document.addEventListener('touchend', e=>{
-      if(!cfg.swipeEnabled || !sx || (Date.now() - st > 500)) { sx=0; return; } // Timeout 500ms để tránh giữ quá lâu
-      
-      const ex = e.changedTouches[0].clientX;
-      const ey = e.changedTouches[0].clientY;
-      const dx = ex - sx;
-      const dy = ey - sy;
-      const absDx = Math.abs(dx);
-      const absDy = Math.abs(dy);
-
-      // Reset
-      sx=0; sy=0;
-
-      // 1. Phải vuốt đủ dài (cfg.swipePx)
-      if (absDx < cfg.swipePx) return;
-      
-      // 2. Phải vuốt ngang "thẳng", không chéo quá (Slope check)
-      // Nếu dy/dx > slope nghĩa là đang vuốt dọc nhiều hơn ngang
-      if (absDy > absDx * cfg.swipeSlopeMax) return;
-
-      // 3. Kiểm tra hướng
-      let validDir = false;
-      if (cfg.swipeDir === 'both') validDir = true;
-      else if (cfg.swipeDir === 'right' && dx > 0) validDir = true; // Vuốt từ trái sang phải
-      else if (cfg.swipeDir === 'left' && dx < 0) validDir = true;  // Vuốt từ phải sang trái
-
-      if (validDir) {
-          // Dùng toạ độ bắt đầu (sx, sy) để xác định vị trí text
-          // (Lưu ý: e.changedTouches lúc end có thể lệch, nên dùng sx sy cũ hoặc lấy trung bình)
-          handleTrigger(ex - dx/2, ey - dy/2); 
+  // Swipe
+  let sx = 0, sy = 0, t0 = 0;
+  document.addEventListener('touchstart', e => { if (cfg.swipeEnabled && e.touches.length === 1) { sx = e.touches[0].clientX; sy = e.touches[0].clientY; t0 = Date.now(); } }, { passive: true });
+  document.addEventListener('touchend', e => {
+    if (!cfg.swipeEnabled || !sx || Date.now() - t0 > 500) { sx = 0; return; }
+    if (e.target.closest('video, iframe, .video-player')) { sx = 0; return; }
+    const ex = e.changedTouches[0].clientX, ey = e.changedTouches[0].clientY;
+    const dx = ex - sx, dy = ey - sy;
+    sx = 0;
+    if (Math.abs(dx) > cfg.swipePx && Math.abs(dy) < Math.abs(dx) * cfg.swipeSlopeMax) {
+      if (cfg.swipeDir === 'both' || (cfg.swipeDir === 'right' && dx > 0) || (cfg.swipeDir === 'left' && dx < 0)) {
+        act(ex - dx / 2, ey - dy / 2);
       }
-  });
+    }
+  }, { passive: true });
 
-  // ========= Settings Panel =========
-  function buildPanel(){
-      if(document.querySelector('.ilt-panel')) return;
-      const p = document.createElement('div');
-      p.className = 'ilt-panel';
-      
-      // HTML Settings
-      p.innerHTML = `
-        <h3>Translate Settings</h3>
-        <div class="ilt-row"><label>Provider</label><select id="p_prov"><option value="google">Google</option><option value="gemini">Gemini</option></select></div>
-        <div class="ilt-row"><label>Mode</label><select id="p_mode"><option value="paragraph">Paragraph</option><option value="group">Group (Gom)</option><option value="sentence">Sentence</option></select></div>
-        <div class="ilt-row" id="row_grp"><label>Lines/Group</label><input id="p_grp" type="number" min="1" max="10"></div>
-        
-        <div class="ilt-row"><label>Hotkey</label>
-            <select id="p_hot">
-                <option value="shift">Shift</option>
-                <option value="alt">Alt</option>
-                <option value="ctrl">Ctrl</option>
-            </select>
-        </div>
+  // Checkbox UI
+  function ui() {
+    if (document.querySelector('.ilt-panel')) return;
+    const p = document.createElement('div'); p.className = 'ilt-panel';
+    p.innerHTML = `<h3>Cài đặt Dịch</h3>
+      <div class="ilt-row"><label>Mode</label><select id="pm"><option value="google">Google</option><option value="gemini">Gemini</option></select></div>
+      <div class="ilt-row"><label>Phím tắt</label><select id="ph"><option value="shift">Shift</option><option value="alt">Alt</option><option value="ctrl">Ctrl</option></select></div>
+      <div class="ilt-row"><label>Vuốt</label><select id="ps"><option value="both">Cả hai</option><option value="right">Sang phải</option><option value="left">Sang trái</option><option value="none">Tắt</option></select></div>
+      <div class="ilt-row"><label>Cỡ chữ</label><input id="pfs" type="number" step="0.05" min="0.5" max="2" style="width:60px"></div>
+      <div class="ilt-row"><label>Màu chữ</label><input id="pc" type="color"></div>
+      <div class="ilt-row"><label>Né Video</label><input id="pbv" type="checkbox"></div>
+      <div class="ilt-row"><input id="pk" type="password" placeholder="Gemini API Key" style="width:100%"></div>
+      <button class="ilt-btn" id="sv">Lưu & Áp dụng</button>`;
+    document.body.appendChild(p);
+    const $ = i => p.querySelector(i);
+    $('#pm').value = cfg.provider;
+    $('#ph').value = cfg.hotkey;
+    $('#ps').value = cfg.swipeEnabled ? cfg.swipeDir : 'none';
+    $('#pk').value = cfg.geminiKey;
+    $('#pfs').value = cfg.fontScale;
+    $('#pc').value = cfg.mutedColor;
+    $('#pbv').checked = true; // Mặc định luôn né video, nhưng có thể lưu setting nếu cần
 
-        <div class="ilt-row"><label>Swipe Dir</label>
-            <select id="p_swd">
-                <option value="both">Both (Trái/Phải)</option>
-                <option value="right">Right (Sang phải)</option>
-                <option value="left">Left (Sang trái)</option>
-                <option value="none">Disable</option>
-            </select>
-        </div>
-        
-        <div class="ilt-row"><label>Gemini Key</label><input id="p_key" type="password" placeholder="AI Key..."></div>
-        <div class="ilt-row"><label>Màu chữ</label><input id="p_col" type="color"></div>
-        <button id="p_save">Lưu & Reload</button>
-      `;
-      document.body.appendChild(p);
+    $('#sv').onclick = () => {
+      cfg.provider = $('#pm').value;
+      cfg.hotkey = $('#ph').value;
+      cfg.geminiKey = $('#pk').value;
+      cfg.fontScale = parseFloat($('#pfs').value) || 0.95;
+      cfg.mutedColor = $('#pc').value;
 
-      // Populate Data
-      const $ = (s) => p.querySelector(s);
-      $('#p_prov').value = cfg.provider;
-      $('#p_mode').value = cfg.mode;
-      $('#p_grp').value = cfg.groupSize;
-      $('#p_hot').value = cfg.hotkey;
-      $('#p_swd').value = cfg.swipeEnabled ? cfg.swipeDir : 'none';
-      $('#p_key').value = cfg.geminiKey;
-      $('#p_col').value = cfg.mutedColor;
+      const s = $('#ps').value;
+      cfg.swipeEnabled = s !== 'none';
+      if (s !== 'none') cfg.swipeDir = s;
 
-      const toggleGrp = () => $('#row_grp').style.display = $('#p_mode').value==='group'?'flex':'none';
-      $('#p_mode').onchange = toggleGrp; toggleGrp();
-
-      $('#p_save').onclick = () => {
-          cfg.provider = $('#p_prov').value;
-          cfg.mode = $('#p_mode').value;
-          cfg.groupSize = +$('#p_grp').value || 3;
-          cfg.geminiKey = $('#p_key').value;
-          cfg.mutedColor = $('#p_col').value;
-          cfg.hotkey = $('#p_hot').value;
-          
-          const swVal = $('#p_swd').value;
-          if (swVal === 'none') {
-              cfg.swipeEnabled = false;
-          } else {
-              cfg.swipeEnabled = true;
-              cfg.swipeDir = swVal;
-          }
-
-          saveCfg();
-          p.remove();
-          // location.reload(); // Reload trang để áp dụng
-          alert('Saved! Refresh page to apply.');
-      };
-      
-      // Click outside to close
-      document.addEventListener('click', function close(e){
-          if(!p.contains(e.target) && !e.shiftKey) {
-             p.remove(); document.removeEventListener('click', close);
-          }
-      }, {once:true, capture:true});
+      save();
+      p.remove();
+      alert('Đã lưu! Tải lại trang để cập nhật màu và cỡ chữ.');
+    };
+    p.onclick = e => { if (e.target === p) p.remove(); };
   }
-  
-  if(typeof GM_registerMenuCommand !== 'undefined') GM_registerMenuCommand("Settings", buildPanel);
+  GM_registerMenuCommand("Settings", ui);
 })();
