@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube
 // @namespace    yt-tools-merged
-// @version      2.6.0
+// @version      2.6.1
 // @description  Screenshot & Bilingual Subtitles with Settings
 // @match        https://www.youtube.com/*
 // @match        https://m.youtube.com/*
@@ -21,6 +21,19 @@
     'use strict';
 
     if (window.top !== window) return;
+
+    // ===== TRUSTED TYPES POLICY (for YouTube CSP bypass) =====
+    try {
+        if (typeof trustedTypes !== 'undefined' && !trustedTypes.defaultPolicy) {
+            trustedTypes.createPolicy('default', {
+                createHTML: s => s,
+                createScriptURL: s => s,
+                createScript: s => s
+            });
+        }
+    } catch (e) {
+        // Policy already exists or not supported
+    }
 
     // ===== CONFIGURATION =====
     const DEFAULT_SETTINGS = {
