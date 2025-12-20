@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Gestures
-// @namespace    https://github.com/yourname/vm-unified-gestures
-// @version      2.0.0
-// @description  Long-press mở link; Right-click mở tab; Double Right-click đóng tab; Double Tap đóng tab; 2 ngón giữ yên 500ms xuống cuối trang.
+// @namespace    unified-gestures-forum
+// @version      3.0.1
+// @description  Long-press/Right-click mở link, Double-tap đóng tab, Edge swipe scroll, Forum fit & Pager
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
 // @run-at       document-start
@@ -15,215 +15,367 @@
 // @license      MIT
 // ==/UserScript==
 
-/* ===== CONFIGURATION ===== */
-const CONFIG = {
-    key: 'vmug_cfg_lite',
-    defaults: {
-        lpress: { enabled: true, mode: 'bg', ms: 500, tol: 20 },
-        rclick: { enabled: true, mode: 'fg' },
-        dblRightMs: 500,
-        dblTapMs: 300,
-        twoFingerMs: 500
-    },
+'use strict';
+
+const HOST = location.host;
+const STORAGE_KEY = 'ges_forum_v1';
+
+const DEFAULTS = {
+    lpress: { enabled: true, mode: 'bg', ms: 500 },
+    rclick: { enabled: true, mode: 'fg' },
+    dblRightMs: 500,
+    dblTapMs: 300,
+    edge: { enabled: true, width: 40, speed: 3 },
+    forum: { enabled: false, mode: 'fit', maxWidth: 1600, hideSidebar: false, mediaFit: true, selector: '' },
+    pager: { enabled: true, threshold: 80, window: 1000, hops: 3 }
+};
+
+const Config = {
+    _cache: null,
     get() {
+        if (this._cache) return this._cache;
         try {
-            const raw = GM_getValue(this.key);
-            return { ...this.defaults, ...(raw ? JSON.parse(raw) : {}) };
-        } catch { return this.defaults; }
+            const saved = JSON.parse(GM_getValue(STORAGE_KEY) || '{}');
+            this._cache = {
+                lpress: { ...DEFAULTS.lpress, ...saved.lpress },
+                rclick: { ...DEFAULTS.rclick, ...saved.rclick },
+                edge: { ...DEFAULTS.edge, ...saved.edge },
+                forum: { ...DEFAULTS.forum, ...(saved.forumHosts?.[HOST] || {}) },
+                pager: { ...DEFAULTS.pager, ...saved.pager },
+                dblRightMs: saved.dblRightMs ?? DEFAULTS.dblRightMs,
+                dblTapMs: saved.dblTapMs ?? DEFAULTS.dblTapMs,
+                _forumHosts: saved.forumHosts || {}
+            };
+        } catch { this._cache = { ...DEFAULTS, forum: { ...DEFAULTS.forum }, _forumHosts: {} }; }
+        return this._cache;
     },
-    save(cfg) { GM_setValue(this.key, JSON.stringify(cfg)); }
-};
-
-let CFG = CONFIG.get();
-
-/* ===== STATE MANAGEMENT ===== */
-const State = {
-    suppressUntil: 0,
-    lp: { timer: null, active: false, x: 0, y: 0 },
-    dblRight: { lastTime: 0, x: 0, y: 0 },
-    dblTap: { taps: [] },
-    tf: { timer: null, active: false, startDist: 0, startScroll: { x: 0, y: 0 }, touches: [] }
-};
-
-/* ===== UTILITIES ===== */
-const Utils = {
-    suppress: (ms = 500) => { State.suppressUntil = Date.now() + ms; },
-
-    isEditable: (el) => {
-        if (!el) return false;
-        const tag = el.tagName;
-        return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
-    },
-
-    getLink: (ev) => {
-        const path = ev.composedPath?.() || [];
-        for (const n of path) {
-            if (n.tagName === 'A' && n.href) return n;
-        }
-        return null;
-    },
-
-    isValidLink: (a) => {
-        if (!a || !a.href) return false;
-        const h = a.href.trim();
-        return !/^(javascript|mailto|tel|sms|#):/.test(h);
-    },
-
-    openTab: (url, mode) => {
-        const active = mode === 'fg';
-        try {
-            GM_openInTab(url, { active, insert: true, setParent: true });
-        } catch {
-            const w = window.open(url, '_blank', active ? '' : 'noopener');
-            if (w && !active) { w.blur(); window.focus(); }
-        }
-        Utils.suppress(800);
-    },
-
-    closeTab: () => {
-        try { window.close(); } catch {}
-        try { window.open('', '_self'); window.close(); } catch {} // Fallback
-        try { if (history.length > 1) history.back(); } catch {} // Fallback
-        Utils.suppress(600);
-    },
-
-    scrollToBottom: () => {
-        const h = document.documentElement.scrollHeight || document.body.scrollHeight;
-        window.scrollTo({ top: h, behavior: 'smooth' });
-        Utils.suppress(400);
+    save(cfg) {
+        cfg._forumHosts[HOST] = cfg.forum;
+        GM_setValue(STORAGE_KEY, JSON.stringify({
+            lpress: cfg.lpress, rclick: cfg.rclick, edge: cfg.edge, pager: cfg.pager,
+            dblRightMs: cfg.dblRightMs, dblTapMs: cfg.dblTapMs, forumHosts: cfg._forumHosts
+        }));
+        this._cache = cfg;
     }
 };
 
-/* ===== MENU COMMANDS ===== */
-if (typeof GM_registerMenuCommand !== 'undefined') {
-    const reg = (label, promptText, key, isBool = false, isMode = false) => {
-        GM_registerMenuCommand(label, () => {
-            let val = isBool ? confirm(promptText) : prompt(promptText, isMode ? CFG[key].mode : (typeof CFG[key] === 'object' ? CFG[key].ms : CFG[key]));
-            if (val === null) return;
-            if (!isMode && !isBool) val = Number(val);
-            
-            if (isMode) CFG[key].mode = val.toLowerCase().startsWith('f') ? 'fg' : 'bg';
-            else if (isBool) CFG[key].enabled = val;
-            else if (typeof CFG[key] === 'object') CFG[key].ms = val;
-            else CFG[key] = val;
+let CFG = Config.get();
 
-            CONFIG.save(CFG);
-            alert('Đã lưu! F5 để áp dụng.');
-        });
+/* STATE & HELPERS */
+const State = {
+    suppressUntil: 0, lpFired: false,
+    lp: { timer: null, active: false, x: 0, y: 0 },
+    dblRight: { lastTime: 0, x: 0, y: 0 },
+    dblTap: { last: null },
+    edge: { active: false, lastY: 0 }
+};
+
+const TOL = { move: 20, tap: 30 };
+const dist = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
+const suppress = (ms = 500) => { State.suppressUntil = Date.now() + ms; };
+const isEditable = el => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+
+const getValidLink = ev => {
+    for (const n of (ev.composedPath?.() || [])) {
+        if (n.tagName === 'A' && n.href && !/^(javascript|mailto|tel|sms|#):/.test(n.href)) return n;
+    }
+    return null;
+};
+
+const openTab = (url, mode) => {
+    const active = mode === 'fg';
+    try { GM_openInTab(url, { active, insert: true, setParent: true }); }
+    catch { const w = window.open(url, '_blank', active ? '' : 'noopener'); if (w && !active) { w.blur(); window.focus(); } }
+    suppress(800);
+};
+
+const closeTab = () => {
+    try { window.close(); } catch { }
+    try { window.open('', '_self'); window.close(); } catch { }
+    try { if (history.length > 1) history.back(); } catch { }
+    suppress(600);
+};
+
+const cancelLP = () => { clearTimeout(State.lp.timer); State.lp.timer = null; State.lp.active = false; };
+
+const toast = msg => {
+    let t = document.getElementById('ges-toast');
+    if (!t) { t = document.createElement('div'); t.id = 'ges-toast'; document.body.appendChild(t); }
+    t.textContent = msg; t.style.opacity = '1';
+    clearTimeout(t._timer); t._timer = setTimeout(() => t.style.opacity = '0', 2000);
+};
+
+/* FORUM FIT */
+const FORUM_SELECTORS = '.p-body-inner,.p-pageWrapper,.pageWidth,#content,.container,.container-fluid,#wrap,.wrap,#page,main,.site-content';
+
+const updateForum = () => {
+    const { enabled, mode, maxWidth, hideSidebar, mediaFit } = CFG.forum;
+    document.documentElement.style.setProperty('--ff-max-w', mode === 'fit' ? 'min(98vw, 2400px)' : `${maxWidth}px`);
+    document.documentElement.classList.toggle('ff-on', enabled);
+    document.documentElement.classList.toggle('ff-hide-sb', enabled && hideSidebar);
+    document.documentElement.classList.toggle('ff-media', enabled && mediaFit);
+};
+
+const detectTargets = () => {
+    if (!CFG.forum.enabled) return;
+    document.querySelectorAll(CFG.forum.selector || FORUM_SELECTORS).forEach(el => {
+        if (el.offsetParent !== null) el.classList.add('ff-target');
+    });
+};
+
+/* PAGER */
+let wheelAcc = 0, wheelTimer = null, wheelDir = 0, wheelHops = 0;
+
+const findLink = (keywords, relType) => {
+    if (relType) {
+        const rel = document.querySelector(`a[rel="${relType}"], link[rel="${relType}"]`);
+        if (rel?.href) return rel.href;
+    }
+    for (const a of document.querySelectorAll('a[href]')) {
+        const t = (a.innerText || a.getAttribute('aria-label') || '').toLowerCase();
+        if (keywords.some(k => t.includes(k))) return a.href;
+    }
+    return null;
+};
+
+const goPage = (dir, isMax) => {
+    const href = isMax
+        ? findLink(dir > 0 ? ['last', 'cuối', '末'] : ['first', 'đầu', '首'], dir > 0 ? 'last' : 'first')
+        : findLink(dir > 0 ? ['next', 'tiếp', 'sau', '»', '›', '下一'] : ['prev', 'trước', 'lùi', '«', '‹', '上一'], dir > 0 ? 'next' : 'prev');
+    toast(isMax ? (dir > 0 ? '⏭ Cuối' : '⏮ Đầu') : (dir > 0 ? '▶ Sau' : '◀ Trước'));
+    if (href) location.href = href;
+};
+
+/* STYLES */
+const injectStyles = () => {
+    const s = document.createElement('style');
+    s.id = 'ges-styles';
+    s.textContent = `
+        :root{--ff-max-w:100%}
+        html.ff-on body{overflow-x:hidden;scrollbar-gutter:stable}
+        html.ff-on .ff-target,html.ff-on .p-body-inner,html.ff-on .pageWidth,html.ff-on .container,html.ff-on .wrap,html.ff-on #content,html.ff-on main{max-width:var(--ff-max-w)!important;width:min(100%,var(--ff-max-w))!important;margin-inline:auto!important;box-sizing:border-box!important}
+        html.ff-on.ff-hide-sb aside,html.ff-on.ff-hide-sb [class*="sidebar"]{display:none!important}
+        html.ff-on.ff-media img,html.ff-on.ff-media iframe{max-width:100%!important;height:auto}
+        #ges-toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#1a1a1ae6;color:#fff;padding:8px 16px;border-radius:20px;font:13px/1.4 system-ui;z-index:2147483647;pointer-events:none;opacity:0;transition:opacity .2s}
+        #ges-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2147483646;opacity:0;pointer-events:none;transition:opacity .2s}
+        #ges-overlay.open{opacity:1;pointer-events:auto}
+        #ges-panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.95);width:min(400px,90vw);max-height:85vh;overflow-y:auto;background:#1e1e1e;padding:16px;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);font:13px/1.5 system-ui;z-index:2147483647;opacity:0;pointer-events:none;transition:.2s;color:#eee}
+        #ges-overlay.open #ges-panel{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto}
+        .ges-head{margin-bottom:12px;border-bottom:1px solid #333;padding-bottom:10px}
+        .ges-title{font-weight:700;font-size:15px;margin:0;color:#fff}
+        .ges-sub{font-size:11px;color:#888;margin-top:3px}
+        .ges-group{background:#2a2a2a;padding:10px 12px;border-radius:10px;margin-bottom:10px}
+        .ges-group-title{font-size:10px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:8px;letter-spacing:.5px}
+        .ges-row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+        .ges-row:last-child{margin-bottom:0}
+        .ges-label{flex:1;color:#ddd}
+        .ges-input,.ges-select{border:1px solid #444;background:#333;color:#fff;border-radius:5px;padding:4px 8px;width:70px;text-align:right;font:inherit}
+        .ges-input.long{width:100%;text-align:left}
+        .ges-select{width:auto;text-align:left}
+        .ges-switch{position:relative;width:36px;height:20px;flex-shrink:0}
+        .ges-switch input{opacity:0;width:0;height:0}
+        .ges-slider{position:absolute;cursor:pointer;inset:0;background:#555;transition:.2s;border-radius:20px}
+        .ges-slider:before{position:absolute;content:"";height:16px;width:16px;left:2px;bottom:2px;background:#fff;transition:.2s;border-radius:50%}
+        input:checked+.ges-slider{background:#007AFF}
+        input:checked+.ges-slider:before{transform:translateX(16px)}
+        .ges-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+        .ges-btn{border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px;background:#333;color:#fff;transition:.15s}
+        .ges-btn:hover{background:#444}
+        .ges-btn.primary{background:#007AFF}
+        .ges-btn.primary:hover{background:#0066d6}
+        .ges-hint{font-size:10px;color:#666;margin-top:-4px}
+    `;
+    document.documentElement.appendChild(s);
+};
+
+/* SETTINGS MODAL */
+let modal = null;
+
+const createModal = () => {
+    const div = document.createElement('div');
+    div.id = 'ges-overlay';
+    div.innerHTML = `
+        <div id="ges-panel">
+            <div class="ges-head"><h3 class="ges-title">⚙️ Gestures + Forum</h3><div class="ges-sub">${HOST}</div></div>
+            <div class="ges-group">
+                <div class="ges-group-title">🖱️ Chuột</div>
+                <div class="ges-row"><span class="ges-label">Long-press mở link</span><label class="ges-switch"><input type="checkbox" id="g-lp-en"><span class="ges-slider"></span></label></div>
+                <div class="ges-row"><span class="ges-label">↳ Chế độ</span><select id="g-lp-mode" class="ges-select"><option value="bg">Nền</option><option value="fg">Trước</option></select></div>
+                <div class="ges-row"><span class="ges-label">↳ Thời gian</span><input id="g-lp-ms" type="number" class="ges-input" min="200" max="2000" step="50">ms</div>
+                <div class="ges-row"><span class="ges-label">Right-click mở link</span><label class="ges-switch"><input type="checkbox" id="g-rc-en"><span class="ges-slider"></span></label></div>
+                <div class="ges-row"><span class="ges-label">↳ Chế độ</span><select id="g-rc-mode" class="ges-select"><option value="bg">Nền</option><option value="fg">Trước</option></select></div>
+                <div class="ges-row"><span class="ges-label">Double Right-click đóng tab</span><input id="g-dblr" type="number" class="ges-input" min="200" max="1000" step="50">ms</div>
+            </div>
+            <div class="ges-group">
+                <div class="ges-group-title">📱 Mobile</div>
+                <div class="ges-row"><span class="ges-label">Double Tap đóng tab</span><input id="g-dblt" type="number" class="ges-input" min="150" max="500" step="50">ms</div>
+                <div class="ges-row"><span class="ges-label">Edge Swipe cuộn nhanh</span><label class="ges-switch"><input type="checkbox" id="g-edge-en"><span class="ges-slider"></span></label></div>
+                <div class="ges-row"><span class="ges-label">↳ Vùng</span><input id="g-edge-w" type="number" class="ges-input" min="20" max="100" step="5">px</div>
+                <div class="ges-row"><span class="ges-label">↳ Tốc độ</span><input id="g-edge-s" type="number" class="ges-input" min="1" max="10" step="0.5">x</div>
+            </div>
+            <div class="ges-group">
+                <div class="ges-group-title">📐 Forum Fit</div>
+                <div class="ges-row"><span class="ges-label">Bật</span><label class="ges-switch"><input type="checkbox" id="f-en"><span class="ges-slider"></span></label></div>
+                <div class="ges-row"><span class="ges-label">Chế độ</span><select id="f-mode" class="ges-select"><option value="fit">Fit</option><option value="custom">Tùy chỉnh</option></select></div>
+                <div class="ges-row" id="f-row-w"><span class="ges-label">Độ rộng</span><input id="f-width" type="number" class="ges-input" step="50">px</div>
+                <div class="ges-row"><span class="ges-label">Ẩn Sidebar</span><label class="ges-switch"><input type="checkbox" id="f-sidebar"><span class="ges-slider"></span></label></div>
+                <div class="ges-row"><span class="ges-label">Fit ảnh/video</span><label class="ges-switch"><input type="checkbox" id="f-media"><span class="ges-slider"></span></label></div>
+                <div class="ges-row"><input id="f-sel" type="text" class="ges-input long" placeholder="Selector (.wrap, #content...)"></div>
+            </div>
+            <div class="ges-group">
+                <div class="ges-group-title">📄 Pager</div>
+                <div class="ges-row"><span class="ges-label">Cuộn ngang chuyển trang</span><label class="ges-switch"><input type="checkbox" id="p-en"><span class="ges-slider"></span></label></div>
+                <div class="ges-hint">Giữ Shift để cuộn thường</div>
+            </div>
+            <div class="ges-actions"><button class="ges-btn" id="ges-close">Đóng</button><button class="ges-btn primary" id="ges-save">Lưu</button></div>
+        </div>`;
+    document.body.appendChild(div);
+
+    const $ = id => div.querySelector('#' + id);
+    const close = () => div.classList.remove('open');
+
+    $('ges-close').onclick = close;
+    $('ges-save').onclick = () => {
+        CFG.lpress = { enabled: $('g-lp-en').checked, mode: $('g-lp-mode').value, ms: +$('g-lp-ms').value || 500 };
+        CFG.rclick = { enabled: $('g-rc-en').checked, mode: $('g-rc-mode').value };
+        CFG.dblRightMs = +$('g-dblr').value || 500;
+        CFG.dblTapMs = +$('g-dblt').value || 300;
+        CFG.edge = { enabled: $('g-edge-en').checked, width: +$('g-edge-w').value || 40, speed: +$('g-edge-s').value || 3 };
+        CFG.forum = { enabled: $('f-en').checked, mode: $('f-mode').value, maxWidth: +$('f-width').value || 1600, hideSidebar: $('f-sidebar').checked, mediaFit: $('f-media').checked, selector: $('f-sel').value };
+        CFG.pager.enabled = $('p-en').checked;
+        Config.save(CFG);
+        updateForum(); detectTargets();
+        close(); toast('✓ Đã lưu!');
     };
-    reg(`⚙️ Long-press: ${CFG.lpress.enabled ? 'ON' : 'OFF'}`, 'Bật Long-press?', 'lpress', true);
-    reg(`   ↳ Mode: ${CFG.lpress.mode.toUpperCase()}`, 'Mode "bg" hoặc "fg":', 'lpress', false, true);
-    reg(`   ↳ Time: ${CFG.lpress.ms}ms`, 'Thời gian giữ (ms):', 'lpress');
-}
+    $('f-mode').onchange = e => $('f-row-w').style.display = e.target.value === 'custom' ? 'flex' : 'none';
+    div.onclick = e => { if (e.target === div) close(); };
+    return div;
+};
 
-/* ===== MAIN LOGIC ===== */
-(() => {
-    'use strict';
+const syncModal = () => {
+    if (!modal) return;
+    const $ = id => modal.querySelector('#' + id);
+    $('g-lp-en').checked = CFG.lpress.enabled;
+    $('g-lp-mode').value = CFG.lpress.mode;
+    $('g-lp-ms').value = CFG.lpress.ms;
+    $('g-rc-en').checked = CFG.rclick.enabled;
+    $('g-rc-mode').value = CFG.rclick.mode;
+    $('g-dblr').value = CFG.dblRightMs;
+    $('g-dblt').value = CFG.dblTapMs;
+    $('g-edge-en').checked = CFG.edge.enabled;
+    $('g-edge-w').value = CFG.edge.width;
+    $('g-edge-s').value = CFG.edge.speed;
+    $('f-en').checked = CFG.forum.enabled;
+    $('f-mode').value = CFG.forum.mode;
+    $('f-width').value = CFG.forum.maxWidth;
+    $('f-sidebar').checked = CFG.forum.hideSidebar;
+    $('f-media').checked = CFG.forum.mediaFit;
+    $('f-sel').value = CFG.forum.selector || '';
+    $('p-en').checked = CFG.pager.enabled;
+    $('f-row-w').style.display = CFG.forum.mode === 'custom' ? 'flex' : 'none';
+};
 
-    // Global Event Guard
-    const stopFn = (e) => {
-        if (Date.now() < State.suppressUntil) {
-            e.preventDefault(); e.stopPropagation(); return true;
-        }
-        return false;
-    };
-    ['click', 'auxclick', 'contextmenu'].forEach(evt => window.addEventListener(evt, stopFn, true));
+const openSettings = () => {
+    if (!modal) modal = createModal();
+    syncModal();
+    requestAnimationFrame(() => modal.classList.add('open'));
+};
 
-    /* --- 1. LONG PRESS (Pointer Events - No Visuals) --- */
-    const cancelLP = () => {
-        if (State.lp.timer) { clearTimeout(State.lp.timer); State.lp.timer = null; }
-        State.lp.active = false;
-    };
+/* EVENTS */
+const initEvents = () => {
+    const guard = e => { if (Date.now() < State.suppressUntil) { e.preventDefault(); e.stopPropagation(); return true; } return false; };
+    ['click', 'auxclick', 'contextmenu'].forEach(evt => window.addEventListener(evt, guard, true));
 
-    window.addEventListener('pointerdown', (e) => {
-        if ((e.pointerType === 'mouse' && e.button !== 0) || !CFG.lpress.enabled || Utils.isEditable(e.target)) return;
-        const link = Utils.getLink(e);
-        if (!Utils.isValidLink(link)) return;
-
-        State.lp.active = true;
-        State.lp.x = e.clientX;
-        State.lp.y = e.clientY;
-
+    // Long Press
+    window.addEventListener('pointerdown', e => {
+        State.lpFired = false;
+        if ((e.pointerType === 'mouse' && e.button !== 0) || !CFG.lpress.enabled || isEditable(e.target)) return;
+        const link = getValidLink(e);
+        if (!link) return;
+        State.lp = { timer: null, active: true, x: e.clientX, y: e.clientY };
         State.lp.timer = setTimeout(() => {
-            if (State.lp.active) {
-                State.lp.active = false;
-                Utils.openTab(link.href, CFG.lpress.mode);
-            }
+            if (State.lp.active) { State.lp.active = false; State.lpFired = true; openTab(link.href, CFG.lpress.mode); }
         }, CFG.lpress.ms);
     }, true);
 
-    window.addEventListener('pointermove', (e) => {
-        if (State.lp.active && Math.hypot(e.clientX - State.lp.x, e.clientY - State.lp.y) > CFG.lpress.tol) cancelLP();
+    window.addEventListener('pointermove', e => {
+        if (State.lp.active && dist(e.clientX, e.clientY, State.lp.x, State.lp.y) > TOL.move) cancelLP();
     }, true);
 
     ['pointerup', 'pointercancel'].forEach(evt => window.addEventListener(evt, cancelLP, true));
+    window.addEventListener('click', e => { if (State.lpFired) { e.preventDefault(); e.stopPropagation(); State.lpFired = false; } }, true);
 
-    /* --- 2. DOUBLE RIGHT CLICK (Desktop) --- */
-    window.addEventListener('mousedown', (e) => {
-        if (e.button !== 2 || Utils.isEditable(e.target)) return;
-        const now = Date.now();
-        if (now - State.dblRight.lastTime < CFG.dblRightMs && Math.hypot(e.clientX - State.dblRight.x, e.clientY - State.dblRight.y) < 20) {
-            e.preventDefault(); e.stopPropagation(); State.dblRight.lastTime = 0;
-            Utils.closeTab();
-        } else {
-            State.dblRight.lastTime = now; State.dblRight.x = e.clientX; State.dblRight.y = e.clientY;
-        }
+    // Double Right Click
+    window.addEventListener('mousedown', e => {
+        if (e.button !== 2 || isEditable(e.target)) return;
+        const now = Date.now(), s = State.dblRight;
+        if (now - s.lastTime < CFG.dblRightMs && dist(e.clientX, e.clientY, s.x, s.y) < TOL.move) {
+            e.preventDefault(); e.stopPropagation(); s.lastTime = 0; closeTab();
+        } else { s.lastTime = now; s.x = e.clientX; s.y = e.clientY; }
     }, true);
 
-    /* --- 3. RIGHT CLICK OPEN LINK (Desktop) --- */
-    window.addEventListener('contextmenu', (e) => {
-        if (stopFn(e) || !CFG.rclick.enabled || e.button !== 2) return;
-        const link = Utils.getLink(e);
-        if (Utils.isValidLink(link)) {
-            e.preventDefault(); e.stopPropagation();
-            Utils.openTab(link.href, CFG.rclick.mode);
-        }
+    // Right Click Open Link
+    window.addEventListener('contextmenu', e => {
+        if (guard(e) || !CFG.rclick.enabled || e.button !== 2) return;
+        const link = getValidLink(e);
+        if (link) { e.preventDefault(); e.stopPropagation(); openTab(link.href, CFG.rclick.mode); }
     }, true);
 
-    /* --- 4. TOUCH GESTURES (Double Tap & 2-Finger Hold) --- */
-    const clearTF = () => { if (State.tf.timer) clearTimeout(State.tf.timer); State.tf.timer = null; State.tf.active = false; };
-
-    window.addEventListener('touchstart', (e) => {
-        if (Utils.isEditable(e.target)) return;
-        const now = Date.now();
-
-        // A. DOUBLE TAP (1 finger)
-        if (e.touches.length === 1) {
-            const t = e.touches[0], last = State.dblTap.taps[0];
-            if (last && (now - last.time < CFG.dblTapMs) && Math.hypot(t.clientX - last.x, t.clientY - last.y) < 30) {
-                e.preventDefault(); e.stopPropagation(); State.dblTap.taps = [];
-                Utils.closeTab();
-            } else {
-                State.dblTap.taps = [{ time: now, x: t.clientX, y: t.clientY }];
-            }
-        } 
-        // B. 2 FINGER HOLD
-        else if (e.touches.length === 2) {
-            cancelLP(); // Hủy long press nếu có
-            const t1 = e.touches[0], t2 = e.touches[1];
-            State.tf.active = true;
-            State.tf.startDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-            const se = document.scrollingElement || document.documentElement;
-            State.tf.startScroll = { x: se.scrollLeft, y: se.scrollTop };
-            State.tf.touches = [{ id: t1.identifier, x: t1.clientX, y: t1.clientY }, { id: t2.identifier, x: t2.clientX, y: t2.clientY }];
-            
-            State.tf.timer = setTimeout(() => { if (State.tf.active) { Utils.scrollToBottom(); State.tf.active = false; } }, CFG.twoFingerMs);
-        } else clearTF();
+    // Touch
+    window.addEventListener('touchstart', e => {
+        if (isEditable(e.target) || e.touches.length !== 1) return;
+        const t = e.touches[0], now = Date.now();
+        if (CFG.edge.enabled && t.clientX < CFG.edge.width) { State.edge = { active: true, lastY: t.clientY }; cancelLP(); return; }
+        const last = State.dblTap.last;
+        if (last && now - last.time < CFG.dblTapMs && dist(t.clientX, t.clientY, last.x, last.y) < TOL.tap) {
+            e.preventDefault(); e.stopPropagation(); State.dblTap.last = null; closeTab();
+        } else { State.dblTap.last = { time: now, x: t.clientX, y: t.clientY }; }
     }, { capture: true, passive: false });
 
-    window.addEventListener('touchmove', (e) => {
-        if (!State.tf.active || e.touches.length !== 2) { clearTF(); return; }
-        const se = document.scrollingElement || document.documentElement;
-        // Check scroll
-        if (Math.abs(se.scrollTop - State.tf.startScroll.y) > 10 || Math.abs(se.scrollLeft - State.tf.startScroll.x) > 10) { clearTF(); return; }
-        
-        const t1 = e.touches[0], t2 = e.touches[1];
-        // Check pinch
-        if (Math.abs(Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY) - State.tf.startDist) > 15) { clearTF(); return; }
-        // Check finger movement
-        const i1 = State.tf.touches.find(x => x.id === t1.identifier), i2 = State.tf.touches.find(x => x.id === t2.identifier);
-        if ((i1 && Math.hypot(t1.clientX - i1.x, t1.clientY - i1.y) > 15) || (i2 && Math.hypot(t2.clientX - i2.x, t2.clientY - i2.y) > 15)) clearTF();
-    }, { capture: true, passive: true });
+    window.addEventListener('touchmove', e => {
+        if (!State.edge.active || e.touches.length !== 1) { State.edge.active = false; return; }
+        const t = e.touches[0], dy = State.edge.lastY - t.clientY;
+        State.edge.lastY = t.clientY;
+        (document.scrollingElement || document.documentElement).scrollTop += dy * CFG.edge.speed;
+        e.preventDefault();
+    }, { capture: true, passive: false });
 
-    ['touchend', 'touchcancel'].forEach(evt => window.addEventListener(evt, clearTF, true));
-})();
+    ['touchend', 'touchcancel'].forEach(evt => window.addEventListener(evt, () => { State.edge.active = false; }, true));
+
+    // Pager
+    window.addEventListener('wheel', e => {
+        if (!CFG.pager.enabled || e.shiftKey || Math.abs(e.deltaX) < Math.abs(e.deltaY) || Math.abs(e.deltaX) < 10) return;
+        let el = e.target;
+        while (el && el !== document.body) {
+            if (el.scrollWidth > el.clientWidth && ['auto', 'scroll'].includes(getComputedStyle(el).overflowX)) return;
+            if (el.tagName === 'INPUT' || el.isContentEditable) return;
+            el = el.parentElement;
+        }
+        wheelAcc += e.deltaX;
+        if (Math.abs(wheelAcc) > CFG.pager.threshold) {
+            const dir = wheelAcc > 0 ? 1 : -1;
+            wheelHops = dir !== wheelDir ? 1 : wheelHops + 1;
+            wheelDir = dir; wheelAcc = 0;
+            clearTimeout(wheelTimer);
+            wheelTimer = setTimeout(() => { wheelDir = 0; wheelHops = 0; }, CFG.pager.window);
+            if (wheelHops >= CFG.pager.hops) { goPage(dir, true); wheelHops = 0; } else goPage(dir, false);
+        }
+    }, { passive: true });
+
+    document.addEventListener('keydown', e => { if (e.altKey && e.shiftKey && e.code === 'KeyG') openSettings(); });
+};
+
+/* INIT */
+injectStyles();
+updateForum();
+
+const init = () => {
+    detectTargets();
+    new MutationObserver(detectTargets).observe(document.body, { childList: true, subtree: true });
+    initEvents();
+};
+
+if (document.body) init();
+else document.addEventListener('DOMContentLoaded', init);
+
+if (typeof GM_registerMenuCommand !== 'undefined') GM_registerMenuCommand('⚙️ Cài đặt (Alt+Shift+G)', openSettings);
