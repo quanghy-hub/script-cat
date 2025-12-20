@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Translate
 // @namespace    vn.inline.translate.ctrl.swipe.groups
-// @version      2.6.0
+// @version      2.6.1
 // @description  Swipe/hotkey translate. Video safe zone. Optimized for mobile.
 // @author       you
 // @match        http://*/*
@@ -103,12 +103,21 @@
   /* ================= TRANSLATION ================= */
   const cache = new Map();
 
+  // Regex: ký tự vô nghĩa (dấu câu, số, symbols, emoji, whitespace)
+  const JUNK_CHAR = /[\s\d\p{P}\p{S}\p{M}\p{C}\u200B-\u200D\uFEFF]/gu;
+  // Kiểm tra text có ý nghĩa không (có ít nhất 1 chữ cái)
+  const hasMeaningful = txt => txt.replace(JUNK_CHAR, '').length > 0;
+  // Làm sạch ký tự vô nghĩa thừa ở đầu/cuối dòng trong bản dịch
+  const cleanJunk = txt => txt.replace(/^[\s\p{P}\p{S}]+|[\s\p{P}\p{S}]+$/gmu, '').replace(/\n{3,}/g, '\n\n').trim();
+
   async function trans(txt, node) {
     // Toggle: remove existing translation
     if (node.nextElementSibling?.classList.contains('ilt-trans-container')) {
       node.nextElementSibling.remove();
       return;
     }
+    // Skip: toàn ký tự vô nghĩa
+    if (!hasMeaningful(txt)) return;
     // Dedupe
     if (Date.now() - (cache.get(txt) || 0) < cfg.dedupeSeconds * 1000) return;
     cache.set(txt, Date.now());
@@ -139,7 +148,9 @@
           res = r2[0].map(x => x[0]).join('');
         }
       }
-      w.firstChild.innerHTML = `<div class="ilt-txt">${res.replace(/[&<]/g, c => ({ '&': '&amp;', '<': '&lt;' }[c]))}</div>`;
+      const cleaned = cleanJunk(res);
+      if (!cleaned) { w.remove(); return; }
+      w.firstChild.innerHTML = `<div class="ilt-txt">${cleaned.replace(/[&<]/g, c => ({ '&': '&amp;', '<': '&lt;' }[c]))}</div>`;
     } catch {
       w.innerText = 'Err';
       setTimeout(() => w.remove(), 2000);
