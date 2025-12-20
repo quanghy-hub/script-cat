@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Floating
-// @namespace    
-// @version      5.5
+// @namespace    http://tampermonkey.net/
+// @version      5.6.
 // @description  Floating video player optimized for mobile with video rotation
-// @author       me
+// @author       Claude
 // @match        *://*/*
 // @grant        none
 // @run-at       document-end
@@ -12,7 +12,9 @@
 (function () {
     'use strict';
 
-    // --- CSS ---
+    // ============================================
+    // CSS STYLES
+    // ============================================
     const css = `
         #fvp-master-icon {
             position: fixed; z-index: 2147483646;
@@ -246,7 +248,15 @@
 
     document.head.appendChild(Object.assign(document.createElement('style'), { textContent: css }));
 
-    // --- UTILS ---
+    // ============================================
+    // CONSTANTS & CONFIGURATION
+    // ============================================
+    const FIT = ['contain', 'cover', 'fill'];
+    const FIT_ICONS = ['⤢', '🔍', '↔'];
+
+    // ============================================
+    // UTILITY FUNCTIONS
+    // ============================================
     const $ = id => document.getElementById(id);
     const el = (tag, cls, html) => {
         const e = document.createElement(tag);
@@ -264,9 +274,11 @@
     };
     const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
+    // ============================================
+    // STATE MANAGEMENT
+    // ============================================
     let box, icon, menu, curVid, origPar, ph;
     let fitIdx = 0, zoomLevel = 1, rotationAngle = 0;
-    const FIT = ['contain', 'cover', 'fill'], FIT_ICONS = ['⤢', '🔍', '↔'];
 
     const state = {
         isDrag: false, isResize: false, isIconDrag: false,
@@ -276,258 +288,19 @@
         origW: 0, origH: 0
     };
 
-    function init() {
-        // Check if page has videos - don't show icon if none
-        const hasVideos = document.querySelectorAll('video').length > 0;
-
-        // Icon
-        icon = el('div', 'fvp-idle', `
-            <svg viewBox="0 0 24 24" style="width:24px;fill:#fff">
-                <path d="M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z"/>
-            </svg>
-            <span id="fvp-badge" style="display:none">0</span>
-        `);
-        icon.id = 'fvp-master-icon';
-        Object.assign(icon.style, { bottom: '20px', left: '20px', display: hasVideos ? 'flex' : 'none' });
-        document.body.appendChild(icon);
-
-        menu = el('div');
-        menu.id = 'fvp-menu';
-        document.body.appendChild(menu);
-
-        // Player Box
-        box = el('div', '', `
-            <div id="fvp-wrapper"></div>
-            <div id="fvp-left-drag"></div>
-            <div class="fvp-resize-handle fvp-resize-r"></div>
-            <div class="fvp-resize-handle fvp-resize-b"></div>
-            <div class="fvp-resize-handle fvp-resize-br"></div>
-            <div id="fvp-head" class="fvp-overlay">
-                <div id="fvp-head-drag"></div>
-                <button id="fvp-close" class="fvp-btn" title="Close">✕</button>
-            </div>
-            <div id="fvp-ctrl" class="fvp-overlay">
-                <div id="fvp-seek-row">
-                    <button id="fvp-play-pause" class="fvp-btn" title="Play/Pause">▶</button>
-                    <div id="fvp-seek-container">
-                        <div id="fvp-time-display">
-                            <span id="fvp-current-time">0:00</span>
-                            <span id="fvp-duration">0:00</span>
-                        </div>
-                        <div id="fvp-seek-track"><div id="fvp-buffer"></div></div>
-                        <input type="range" id="fvp-seek" min="0" max="10000" step="1" value="0" title="Seek">
-                    </div>
-                </div>
-                <div class="fvp-control-row">
-                    <div class="fvp-volume-container">
-                        <button id="fvp-vol-btn" class="fvp-btn" title="Mute/Unmute">🔊</button>
-                        <div class="fvp-volume-wrapper">
-                            <input type="range" class="fvp-volume-slider" id="fvp-vol" min="0" max="1" step="0.05" value="1" title="Volume">
-                        </div>
-                    </div>
-                    <div class="fvp-icon-group">
-                        <button id="fvp-rotate" class="fvp-btn" title="Rotate 90°">↻</button>
-                        <button id="fvp-fit" class="fvp-btn" title="Fit mode">⤢</button>
-                        <button id="fvp-zoom" class="fvp-btn" title="Zoom video">+</button>
-                        <button id="fvp-full" class="fvp-btn" title="Fullscreen">⛶</button>
-                        <button id="fvp-mini" class="fvp-btn" title="Exit fullscreen">⊟</button>
-                        <button id="fvp-prev" class="fvp-btn" title="Previous">⏮</button>
-                        <button id="fvp-next" class="fvp-btn" title="Next">⏭</button>
-                    </div>
-                </div>
-            </div>
-        `);
-        box.id = 'fvp-container';
-        box.style.display = 'none';
-        box.style.top = `${clamp((innerHeight - 180) / 2, 20, innerHeight - 200)}px`;
-        box.style.left = '20px';
-        document.body.appendChild(box);
-
-        setupEvents();
-        resetIdle();
+    // ============================================
+    // UI UPDATE FUNCTIONS
+    // ============================================
+    function updateVolUI() {
+        if (!curVid) return;
+        const v = curVid.muted ? 0 : curVid.volume;
+        $('fvp-vol-btn').textContent = v === 0 ? '🔇' : v < 0.5 ? '🔉' : '🔊';
+        if (!curVid.muted) $('fvp-vol').value = v;
     }
 
-    const toggleMenu = () => {
-        resetIdle();
-        const show = menu.style.display !== 'flex';
-        menu.style.display = show ? 'flex' : 'none';
-        if (show) {
-            const r = icon.getBoundingClientRect();
-            menu.style.left = `${clamp(r.left, 10, innerWidth - 290)}px`;
-            if (innerHeight - r.bottom < 300) {
-                menu.style.bottom = `${innerHeight - r.top + 10}px`;
-                menu.style.top = 'auto';
-            } else {
-                menu.style.top = `${r.bottom + 10}px`;
-                menu.style.bottom = 'auto';
-            }
-            renderMenu();
-        }
-    };
-
-    const resetIdle = () => {
-        if (!icon) return;
-        icon.classList.remove('fvp-idle');
-        clearTimeout(state.idleTimer);
-        state.idleTimer = setTimeout(() => icon?.classList.add('fvp-idle'), 3000);
-    };
-
-    function setupEvents() {
-        // Icon drag
-        const startIconDrag = e => {
-            e.preventDefault();
-            e.stopPropagation();
-            resetIdle();
-            const c = getCoord(e);
-            state.isIconDrag = true;
-            state.startX = state.iconStartX = c.x;
-            state.startY = state.iconStartY = c.y;
-            const r = icon.getBoundingClientRect();
-            state.initX = r.left;
-            state.initY = r.top;
-        };
-        icon.addEventListener('touchstart', startIconDrag, { passive: false });
-        icon.addEventListener('mousedown', startIconDrag);
-
-        // Global move/end
-        const move = e => {
-            if (!state.isDrag && !state.isResize && !state.isIconDrag) return;
-            const c = getCoord(e);
-            const dx = c.x - state.startX, dy = c.y - state.startY;
-
-            if (state.isIconDrag) {
-                icon.style.left = `${clamp(state.initX + dx, 10, innerWidth - 58)}px`;
-                icon.style.top = `${clamp(state.initY + dy, 10, innerHeight - 58)}px`;
-                icon.style.bottom = icon.style.right = 'auto';
-                resetIdle();
-            } else if (state.isDrag) {
-                box.style.left = `${clamp(state.initX + dx, 0, innerWidth - box.offsetWidth)}px`;
-                box.style.top = `${clamp(state.initY + dy, 0, innerHeight - box.offsetHeight)}px`;
-            } else if (state.isResize) {
-                if (state.resizeDir.includes('r')) box.style.width = `${Math.max(200, state.initW + dx)}px`;
-                if (state.resizeDir.includes('b')) box.style.height = `${Math.max(120, state.initH + dy)}px`;
-            }
-        };
-
-        const end = e => {
-            if (state.isIconDrag) {
-                const c = getCoord(e);
-                if (Math.hypot(c.x - state.iconStartX, c.y - state.iconStartY) < 8) toggleMenu();
-            }
-            state.isDrag = state.isResize = state.isIconDrag = false;
-        };
-
-        document.addEventListener('touchmove', move, { passive: true });
-        document.addEventListener('mousemove', move);
-        document.addEventListener('touchend', end, { passive: true });
-        document.addEventListener('mouseup', end);
-
-        // Player drag
-        const startDrag = e => {
-            e.preventDefault();
-            e.stopPropagation();
-            const c = getCoord(e);
-            state.isDrag = true;
-            state.startX = c.x;
-            state.startY = c.y;
-            state.initX = box.offsetLeft;
-            state.initY = box.offsetTop;
-        };
-        ['fvp-head-drag', 'fvp-left-drag'].forEach(id => {
-            $(id)?.addEventListener('touchstart', startDrag, { passive: false });
-            $(id)?.addEventListener('mousedown', startDrag);
-        });
-
-        // Resize
-        box.querySelectorAll('.fvp-resize-handle').forEach(h => {
-            const startResize = e => {
-                e.preventDefault();
-                e.stopPropagation();
-                const c = getCoord(e);
-                state.isResize = true;
-                state.resizeDir = h.className.includes('br') ? 'br' : h.className.includes('b') ? 'b' : 'r';
-                state.startX = c.x;
-                state.startY = c.y;
-                state.initW = box.offsetWidth;
-                state.initH = box.offsetHeight;
-            };
-            h.addEventListener('touchstart', startResize, { passive: false });
-            h.addEventListener('mousedown', startResize);
-        });
-
-        // Buttons
-        const btn = (id, fn) => $(id)?.addEventListener('click', e => { e.stopPropagation(); fn(); });
-
-        btn('fvp-close', restore);
-        btn('fvp-prev', () => switchVid(-1));
-        btn('fvp-next', () => switchVid(1));
-        btn('fvp-fit', () => {
-            fitIdx = (fitIdx + 1) % 3;
-            if (curVid) curVid.style.objectFit = FIT[fitIdx];
-            $('fvp-fit').textContent = FIT_ICONS[fitIdx];
-        });
-        btn('fvp-zoom', () => {
-            if (!curVid) return;
-            zoomLevel = zoomLevel === 1 ? 1.5 : zoomLevel === 1.5 ? 2 : 1;
-            applyTransform();
-            $('fvp-zoom').textContent = zoomLevel === 1 ? '+' : zoomLevel === 1.5 ? '++' : '-';
-        });
-        btn('fvp-rotate', () => {
-            if (!curVid) return;
-            rotationAngle = (rotationAngle + 90) % 360;
-            applyTransform();
-            adjustForRotation();
-            $('fvp-rotate').style.transform = `rotate(${rotationAngle}deg)`;
-        });
-        btn('fvp-full', toggleFullscreen);
-        btn('fvp-mini', toggleFullscreen); // Exit fullscreen
-        btn('fvp-vol-btn', () => {
-            if (curVid) {
-                curVid.muted = !curVid.muted;
-                updateVolUI();
-            }
-        });
-
-        // Play/Pause button
-        btn('fvp-play-pause', () => {
-            if (!curVid) return;
-            if (curVid.paused) curVid.play().catch(() => { });
-            else curVid.pause();
-        });
-
-        // Seek bar - high precision with immediate touch response
-        const seek = $('fvp-seek');
-        const seekHandler = e => {
-            state.isSeeking = true;
-            if (curVid?.duration) {
-                const val = e.target?.value ?? seek.value;
-                curVid.currentTime = (val / 10000) * curVid.duration;
-                $('fvp-current-time').textContent = formatTime(curVid.currentTime);
-            }
-        };
-        seek?.addEventListener('input', seekHandler);
-        seek?.addEventListener('touchstart', e => {
-            state.isSeeking = true;
-            const rect = seek.getBoundingClientRect();
-            const touch = e.touches[0];
-            const pos = clamp((touch.clientX - rect.left) / rect.width, 0, 1);
-            seek.value = pos * 10000;
-            if (curVid?.duration) {
-                curVid.currentTime = pos * curVid.duration;
-                $('fvp-current-time').textContent = formatTime(curVid.currentTime);
-            }
-        }, { passive: true });
-        seek?.addEventListener('change', () => { state.isSeeking = false; });
-        seek?.addEventListener('touchend', () => { state.isSeeking = false; }, { passive: true });
-
-        // Volume
-        $('fvp-vol')?.addEventListener('input', e => {
-            if (curVid) {
-                curVid.volume = parseFloat(e.target.value);
-                curVid.muted = false;
-                updateVolUI();
-            }
-        });
+    function updatePlayPauseUI() {
+        if (!curVid) return;
+        $('fvp-play-pause').textContent = curVid.paused ? '▶' : '⏸';
     }
 
     function applyTransform() {
@@ -558,35 +331,16 @@
         }
     }
 
-    function updateVolUI() {
-        if (!curVid) return;
-        const v = curVid.muted ? 0 : curVid.volume;
-        $('fvp-vol-btn').textContent = v === 0 ? '🔇' : v < 0.5 ? '🔉' : '🔊';
-        if (!curVid.muted) $('fvp-vol').value = v;
-    }
+    const resetIdle = () => {
+        if (!icon) return;
+        icon.classList.remove('fvp-idle');
+        clearTimeout(state.idleTimer);
+        state.idleTimer = setTimeout(() => icon?.classList.add('fvp-idle'), 3000);
+    };
 
-    function updatePlayPauseUI() {
-        if (!curVid) return;
-        $('fvp-play-pause').textContent = curVid.paused ? '▶' : '⏸';
-    }
-
-    function toggleFullscreen() {
-        const fs = document.fullscreenElement || document.webkitFullscreenElement;
-        if (!fs) {
-            (box.requestFullscreen || box.webkitRequestFullscreen || box.mozRequestFullScreen)?.call(box);
-        } else {
-            (document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen)?.call(document);
-        }
-    }
-
-    ['fullscreenchange', 'webkitfullscreenchange'].forEach(e =>
-        document.addEventListener(e, () => {
-            const fs = document.fullscreenElement || document.webkitFullscreenElement;
-            $('fvp-full').textContent = '⛶';
-            $('fvp-full').title = fs ? 'Exit fullscreen' : 'Fullscreen';
-        })
-    );
-
+    // ============================================
+    // VIDEO MANAGEMENT
+    // ============================================
     function getVideos() {
         return Array.from(document.querySelectorAll('video, .fvp-ph')).reduce((arr, el) => {
             if (el.classList.contains('fvp-ph')) { if (curVid) arr.push(curVid); }
@@ -672,6 +426,27 @@
         updatePlayPauseUI();
     }
 
+    // ============================================
+    // MENU FUNCTIONS
+    // ============================================
+    const toggleMenu = () => {
+        resetIdle();
+        const show = menu.style.display !== 'flex';
+        menu.style.display = show ? 'flex' : 'none';
+        if (show) {
+            const r = icon.getBoundingClientRect();
+            menu.style.left = `${clamp(r.left, 10, innerWidth - 290)}px`;
+            if (innerHeight - r.bottom < 300) {
+                menu.style.bottom = `${innerHeight - r.top + 10}px`;
+                menu.style.top = 'auto';
+            } else {
+                menu.style.top = `${r.bottom + 10}px`;
+                menu.style.bottom = 'auto';
+            }
+            renderMenu();
+        }
+    };
+
     function renderMenu() {
         const list = getVideos();
         menu.innerHTML = `<div style="padding:10px 16px;font-size:12px;color:#888;font-weight:600;border-bottom:1px solid rgba(255,255,255,0.05)">VIDEOS (${list.length})</div>`;
@@ -691,7 +466,252 @@
         }
     }
 
-    // Video detection - hide icon if no videos
+    // ============================================
+    // FULLSCREEN HANDLING
+    // ============================================
+    function toggleFullscreen() {
+        const fs = document.fullscreenElement || document.webkitFullscreenElement;
+        if (!fs) {
+            (box.requestFullscreen || box.webkitRequestFullscreen || box.mozRequestFullScreen)?.call(box);
+        } else {
+            (document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen)?.call(document);
+        }
+    }
+
+    // ============================================
+    // EVENT HANDLERS
+    // ============================================
+    function setupEvents() {
+        // --- Icon Drag ---
+        const startIconDrag = e => {
+            e.preventDefault();
+            e.stopPropagation();
+            resetIdle();
+            const c = getCoord(e);
+            state.isIconDrag = true;
+            state.startX = state.iconStartX = c.x;
+            state.startY = state.iconStartY = c.y;
+            const r = icon.getBoundingClientRect();
+            state.initX = r.left;
+            state.initY = r.top;
+        };
+        icon.addEventListener('touchstart', startIconDrag, { passive: false });
+        icon.addEventListener('mousedown', startIconDrag);
+
+        // --- Global Move/End ---
+        const move = e => {
+            if (!state.isDrag && !state.isResize && !state.isIconDrag) return;
+            const c = getCoord(e);
+            const dx = c.x - state.startX, dy = c.y - state.startY;
+
+            if (state.isIconDrag) {
+                icon.style.left = `${clamp(state.initX + dx, 10, innerWidth - 58)}px`;
+                icon.style.top = `${clamp(state.initY + dy, 10, innerHeight - 58)}px`;
+                icon.style.bottom = icon.style.right = 'auto';
+                resetIdle();
+            } else if (state.isDrag) {
+                box.style.left = `${clamp(state.initX + dx, 0, innerWidth - box.offsetWidth)}px`;
+                box.style.top = `${clamp(state.initY + dy, 0, innerHeight - box.offsetHeight)}px`;
+            } else if (state.isResize) {
+                if (state.resizeDir.includes('r')) box.style.width = `${Math.max(200, state.initW + dx)}px`;
+                if (state.resizeDir.includes('b')) box.style.height = `${Math.max(120, state.initH + dy)}px`;
+            }
+        };
+
+        const end = e => {
+            if (state.isIconDrag) {
+                const c = getCoord(e);
+                if (Math.hypot(c.x - state.iconStartX, c.y - state.iconStartY) < 8) toggleMenu();
+            }
+            state.isDrag = state.isResize = state.isIconDrag = false;
+        };
+
+        document.addEventListener('touchmove', move, { passive: true });
+        document.addEventListener('mousemove', move);
+        document.addEventListener('touchend', end, { passive: true });
+        document.addEventListener('mouseup', end);
+
+        // --- Player Drag ---
+        const startDrag = e => {
+            e.preventDefault();
+            e.stopPropagation();
+            const c = getCoord(e);
+            state.isDrag = true;
+            state.startX = c.x;
+            state.startY = c.y;
+            state.initX = box.offsetLeft;
+            state.initY = box.offsetTop;
+        };
+        ['fvp-head-drag', 'fvp-left-drag'].forEach(id => {
+            $(id)?.addEventListener('touchstart', startDrag, { passive: false });
+            $(id)?.addEventListener('mousedown', startDrag);
+        });
+
+        // --- Resize Handles ---
+        box.querySelectorAll('.fvp-resize-handle').forEach(h => {
+            const startResize = e => {
+                e.preventDefault();
+                e.stopPropagation();
+                const c = getCoord(e);
+                state.isResize = true;
+                state.resizeDir = h.className.includes('br') ? 'br' : h.className.includes('b') ? 'b' : 'r';
+                state.startX = c.x;
+                state.startY = c.y;
+                state.initW = box.offsetWidth;
+                state.initH = box.offsetHeight;
+            };
+            h.addEventListener('touchstart', startResize, { passive: false });
+            h.addEventListener('mousedown', startResize);
+        });
+
+        // --- Button Handlers ---
+        const btn = (id, fn) => $(id)?.addEventListener('click', e => { e.stopPropagation(); fn(); });
+
+        btn('fvp-close', restore);
+        btn('fvp-prev', () => switchVid(-1));
+        btn('fvp-next', () => switchVid(1));
+        btn('fvp-fit', () => {
+            fitIdx = (fitIdx + 1) % 3;
+            if (curVid) curVid.style.objectFit = FIT[fitIdx];
+            $('fvp-fit').textContent = FIT_ICONS[fitIdx];
+        });
+        btn('fvp-zoom', () => {
+            if (!curVid) return;
+            zoomLevel = zoomLevel === 1 ? 1.5 : zoomLevel === 1.5 ? 2 : 1;
+            applyTransform();
+            $('fvp-zoom').textContent = zoomLevel === 1 ? '+' : zoomLevel === 1.5 ? '++' : '-';
+        });
+        btn('fvp-rotate', () => {
+            if (!curVid) return;
+            rotationAngle = (rotationAngle + 90) % 360;
+            applyTransform();
+            adjustForRotation();
+            $('fvp-rotate').style.transform = `rotate(${rotationAngle}deg)`;
+        });
+        btn('fvp-full', toggleFullscreen);
+        btn('fvp-mini', toggleFullscreen);
+        btn('fvp-vol-btn', () => {
+            if (curVid) {
+                curVid.muted = !curVid.muted;
+                updateVolUI();
+            }
+        });
+        btn('fvp-play-pause', () => {
+            if (!curVid) return;
+            if (curVid.paused) curVid.play().catch(() => { });
+            else curVid.pause();
+        });
+
+        // --- Seek Bar ---
+        const seek = $('fvp-seek');
+        const seekHandler = e => {
+            state.isSeeking = true;
+            if (curVid?.duration) {
+                const val = e.target?.value ?? seek.value;
+                curVid.currentTime = (val / 10000) * curVid.duration;
+                $('fvp-current-time').textContent = formatTime(curVid.currentTime);
+            }
+        };
+        seek?.addEventListener('input', seekHandler);
+        seek?.addEventListener('touchstart', e => {
+            state.isSeeking = true;
+            const rect = seek.getBoundingClientRect();
+            const touch = e.touches[0];
+            const pos = clamp((touch.clientX - rect.left) / rect.width, 0, 1);
+            seek.value = pos * 10000;
+            if (curVid?.duration) {
+                curVid.currentTime = pos * curVid.duration;
+                $('fvp-current-time').textContent = formatTime(curVid.currentTime);
+            }
+        }, { passive: true });
+        seek?.addEventListener('change', () => { state.isSeeking = false; });
+        seek?.addEventListener('touchend', () => { state.isSeeking = false; }, { passive: true });
+
+        // --- Volume Slider ---
+        $('fvp-vol')?.addEventListener('input', e => {
+            if (curVid) {
+                curVid.volume = parseFloat(e.target.value);
+                curVid.muted = false;
+                updateVolUI();
+            }
+        });
+    }
+
+    // ============================================
+    // INITIALIZATION
+    // ============================================
+    function init() {
+        const hasVideos = document.querySelectorAll('video').length > 0;
+
+        // Create Icon
+        icon = el('div', 'fvp-idle', `
+            <svg viewBox="0 0 24 24" style="width:24px;fill:#fff">
+                <path d="M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z"/>
+            </svg>
+            <span id="fvp-badge" style="display:none">0</span>
+        `);
+        icon.id = 'fvp-master-icon';
+        Object.assign(icon.style, { bottom: '20px', left: '20px', display: hasVideos ? 'flex' : 'none' });
+        document.body.appendChild(icon);
+
+        // Create Menu
+        menu = el('div');
+        menu.id = 'fvp-menu';
+        document.body.appendChild(menu);
+
+        // Create Player Box
+        box = el('div', '', `
+            <div id="fvp-wrapper"></div>
+            <div id="fvp-left-drag"></div>
+            <div class="fvp-resize-handle fvp-resize-r"></div>
+            <div class="fvp-resize-handle fvp-resize-b"></div>
+            <div class="fvp-resize-handle fvp-resize-br"></div>
+            <div id="fvp-head" class="fvp-overlay">
+                <div id="fvp-head-drag"></div>
+                <button id="fvp-close" class="fvp-btn" title="Close">✕</button>
+            </div>
+            <div id="fvp-ctrl" class="fvp-overlay">
+                <div id="fvp-seek-row">
+                    <button id="fvp-play-pause" class="fvp-btn" title="Play/Pause">▶</button>
+                    <div id="fvp-seek-container">
+                        <div id="fvp-time-display">
+                            <span id="fvp-current-time">0:00</span>
+                            <span id="fvp-duration">0:00</span>
+                        </div>
+                        <div id="fvp-seek-track"><div id="fvp-buffer"></div></div>
+                        <input type="range" id="fvp-seek" min="0" max="10000" step="1" value="0" title="Seek">
+                    </div>
+                </div>
+                <div class="fvp-control-row">
+                    <div class="fvp-volume-container">
+                        <button id="fvp-vol-btn" class="fvp-btn" title="Mute/Unmute">🔊</button>
+                        <div class="fvp-volume-wrapper">
+                            <input type="range" class="fvp-volume-slider" id="fvp-vol" min="0" max="1" step="0.05" value="1" title="Volume">
+                        </div>
+                    </div>
+                    <div class="fvp-icon-group">
+                        <button id="fvp-rotate" class="fvp-btn" title="Rotate 90°">↻</button>
+                        <button id="fvp-fit" class="fvp-btn" title="Fit mode">⤢</button>
+                        <button id="fvp-zoom" class="fvp-btn" title="Zoom video">+</button>
+                        <button id="fvp-full" class="fvp-btn" title="Fullscreen">⛶</button>
+                        <button id="fvp-mini" class="fvp-btn" title="Exit fullscreen">⊟</button>
+                        <button id="fvp-prev" class="fvp-btn" title="Previous">⏮</button>
+                        <button id="fvp-next" class="fvp-btn" title="Next">⏭</button>
+                    </div>
+                </div>
+            </div>
+        `);
+        box.id = 'fvp-container';
+        box.style.display = 'none';
+        box.style.top = `${clamp((innerHeight - 180) / 2, 20, innerHeight - 200)}px`;
+        box.style.left = '20px';
+        document.body.appendChild(box);
+
+        setupEvents();
+        resetIdle();
+    }
+
+    // Video detection interval - hide icon if no videos
     setInterval(() => {
         const list = getVideos().filter(v => {
             if (v === curVid) return true;
@@ -706,7 +726,7 @@
         }
     }, 2000);
 
-    // Init
+    // Start initialization
     document.readyState === 'loading'
         ? document.addEventListener('DOMContentLoaded', init)
         : init();
