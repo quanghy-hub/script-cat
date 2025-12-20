@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Floating
-// @namespace    http://tampermonkey.net/
-// @version      5.4
+// @namespace    
+// @version      5.5
 // @description  Floating video player optimized for mobile with video rotation
-// @author       Claude
+// @author       me
 // @match        *://*/*
 // @grant        none
 // @run-at       document-end
@@ -61,7 +61,7 @@
             background: #000; box-shadow: 0 10px 40px rgba(0,0,0,0.6);
             z-index: 2147483647; border-radius: 12px;
             display: flex; align-items: center; justify-content: center;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: none;
             min-width: 200px; min-height: 120px;
             max-width: calc(100vw - 10px); max-height: calc(100vh - 60px);
             touch-action: none; user-select: none; -webkit-user-select: none;
@@ -111,12 +111,21 @@
         
         #fvp-seek-row { display: flex; align-items: center; gap: 8px; width: 100%; }
         #fvp-play-pause { font-size: 18px; min-width: 28px; min-height: 28px; flex-shrink: 0; }
-        #fvp-seek-container { position: relative; flex: 1; min-width: 0; padding: 12px 0; margin: -12px 0; }
+        #fvp-seek-container { position: relative; flex: 1; min-width: 0; padding: 18px 0; margin: -18px 0; }
         
+        #fvp-seek-track {
+            position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
+            height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px;
+            overflow: hidden; pointer-events: none; z-index: 1;
+        }
+        #fvp-buffer {
+            position: absolute; top: 0; left: 0; height: 100%; width: 0%;
+            background: rgba(255,255,255,0.5); border-radius: 3px;
+        }
         #fvp-seek {
-            width: 100%; height: 6px; 
-            background: rgba(255,255,255,0.3);
-            border-radius: 3px; -webkit-appearance: none; 
+            width: 100%; height: 20px; 
+            background: transparent;
+            -webkit-appearance: none; 
             cursor: pointer; margin: 0; z-index: 2; position: relative;
             touch-action: none;
         }
@@ -124,15 +133,15 @@
             height: 6px; background: transparent; border-radius: 3px;
         }
         #fvp-seek::-webkit-slider-thumb {
-            -webkit-appearance: none; width: 22px; height: 22px;
-            background: #fff; border-radius: 50%; border: 0;
+            -webkit-appearance: none; width: 20px; height: 20px;
+            background: #1da6f0ff; border-radius: 50%; border: 0;
             box-shadow: 0 2px 6px rgba(0,0,0,0.5); 
-            margin-top: -8px;
+            margin-top: -7px;
         }
-        #fvp-seek:active::-webkit-slider-thumb { background: #eee; }
+        #fvp-seek:active::-webkit-slider-thumb { background: #0d8fd8; }
         
         #fvp-time-display {
-            position: absolute; top: -6px; left: 0; right: 0;
+            position: absolute; top: 0; left: 0; right: 0;
             display: flex; justify-content: space-between;
             font-size: 10px; color: rgba(255,255,255,0.9);
             padding: 0 2px; pointer-events: none;
@@ -189,9 +198,9 @@
         #fvp-container:fullscreen #fvp-full { display: none; }
 
         .fvp-resize-handle { position: absolute; z-index: 100; touch-action: none; }
-        .fvp-resize-r { top: 20px; right: -10px; bottom: 60px; width: 20px; cursor: e-resize; }
-        .fvp-resize-b { bottom: 60px; left: 20px; right: 20px; height: 20px; cursor: s-resize; }
-        .fvp-resize-br { bottom: 60px; right: -10px; width: 30px; height: 30px; cursor: se-resize; z-index: 101; }
+        .fvp-resize-r { top: 20px; right: -10px; bottom: 80px; width: 20px; cursor: e-resize; }
+        .fvp-resize-b { bottom: 80px; left: 20px; right: 20px; height: 20px; cursor: s-resize; }
+        .fvp-resize-br { bottom: 80px; right: -10px; width: 30px; height: 30px; cursor: se-resize; z-index: 101; }
         .fvp-resize-br::after {
             content: ''; position: absolute; bottom: 14px; right: 14px;
             width: 8px; height: 8px; 
@@ -268,6 +277,9 @@
     };
 
     function init() {
+        // Check if page has videos - don't show icon if none
+        const hasVideos = document.querySelectorAll('video').length > 0;
+
         // Icon
         icon = el('div', 'fvp-idle', `
             <svg viewBox="0 0 24 24" style="width:24px;fill:#fff">
@@ -276,7 +288,7 @@
             <span id="fvp-badge" style="display:none">0</span>
         `);
         icon.id = 'fvp-master-icon';
-        Object.assign(icon.style, { bottom: '20px', left: '20px' });
+        Object.assign(icon.style, { bottom: '20px', left: '20px', display: hasVideos ? 'flex' : 'none' });
         document.body.appendChild(icon);
 
         menu = el('div');
@@ -302,6 +314,7 @@
                             <span id="fvp-current-time">0:00</span>
                             <span id="fvp-duration">0:00</span>
                         </div>
+                        <div id="fvp-seek-track"><div id="fvp-buffer"></div></div>
                         <input type="range" id="fvp-seek" min="0" max="10000" step="1" value="0" title="Seek">
                     </div>
                 </div>
@@ -639,6 +652,11 @@
                 $('fvp-seek').value = progress;
                 $('fvp-current-time').textContent = formatTime(curVid.currentTime);
             }
+            // Update buffer progress
+            if (curVid.buffered.length > 0 && curVid.duration) {
+                const buffered = (curVid.buffered.end(curVid.buffered.length - 1) / curVid.duration) * 100;
+                $('fvp-buffer').style.width = `${buffered}%`;
+            }
             state.rafId = requestAnimationFrame(updateLoop);
         };
         state.rafId = requestAnimationFrame(updateLoop);
@@ -673,19 +691,20 @@
         }
     }
 
-    // Video detection
+    // Video detection - hide icon if no videos
     setInterval(() => {
         const list = getVideos().filter(v => {
             if (v === curVid) return true;
             const r = v.getBoundingClientRect();
             return r.width > 50 && r.height > 50;
         });
+        if (icon) icon.style.display = list.length ? 'flex' : 'none';
         const badge = $('fvp-badge');
         if (badge) {
             badge.textContent = list.length;
-            badge.style.display = list.length ? 'flex' : 'none';
+            badge.style.display = list.length > 1 ? 'flex' : 'none';
         }
-    }, 3000);
+    }, 2000);
 
     // Init
     document.readyState === 'loading'
