@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Mobile Gestures
 // @namespace    mobile-gestures
-// @version      1.0.0
+// @version      1.0.1
 // @description  Long-press mở link, Double-tap đóng tab, Edge swipe scroll
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
@@ -18,7 +18,7 @@
 'use strict';
 
 const STORAGE_KEY = 'ges_mobile_v1';
-const DEFAULTS = { lpress: { enabled: true, mode: 'bg', ms: 500 }, dblTapMs: 300, edge: { enabled: true, width: 40, speed: 3 } };
+const DEFAULTS = { lpress: { enabled: true, mode: 'bg', ms: 500 }, dblTapMs: 300, edge: { enabled: true, width: 40, speed: 3, side: 'both' } };
 
 const Config = {
     _c: null,
@@ -34,13 +34,22 @@ const Config = {
 };
 
 let CFG = Config.get();
-const State = { suppressUntil: 0, lpFired: false, lp: { timer: null, active: false, x: 0, y: 0 }, dblTap: { last: null }, edge: { active: false, lastY: 0 } };
+const State = { suppressUntil: 0, lpFired: false, lp: { timer: null, active: false, x: 0, y: 0 }, dblTap: { last: null }, edge: { active: false, lastY: 0, lastTime: 0, velocity: 0 } };
 const TOL = { move: 20, tap: 30 };
 const dist = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
 const suppress = (ms = 500) => { State.suppressUntil = Date.now() + ms; };
 const isEditable = el => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
 const getValidLink = ev => { for (const n of (ev.composedPath?.() || [])) if (n.tagName === 'A' && n.href && !/^(javascript|mailto|tel|sms|#):/.test(n.href)) return n; return null; };
 const cancelLP = () => { clearTimeout(State.lp.timer); State.lp.timer = null; State.lp.active = false; };
+
+const isInEdgeZone = (x) => {
+    const { enabled, width, side } = CFG.edge;
+    if (!enabled) return false;
+    const w = window.innerWidth;
+    if (side === 'left') return x < width;
+    if (side === 'right') return x > w - width;
+    return x < width || x > w - width; // both
+};
 
 const openTab = (url, mode) => {
     const active = mode === 'fg';
@@ -62,6 +71,24 @@ const toast = msg => {
     clearTimeout(t._timer); t._timer = setTimeout(() => t.style.opacity = '0', 2000);
 };
 
+/* MOMENTUM SCROLL */
+let momentumRAF = null;
+const startMomentum = (velocity) => {
+    cancelAnimationFrame(momentumRAF);
+    const el = document.scrollingElement || document.documentElement;
+    const friction = 0.97;
+    const minVelocity = 0.3;
+
+    const step = () => {
+        if (Math.abs(velocity) < minVelocity) return;
+        el.scrollTop += velocity;
+        velocity *= friction;
+        momentumRAF = requestAnimationFrame(step);
+    };
+    step();
+};
+const stopMomentum = () => cancelAnimationFrame(momentumRAF);
+
 /* STYLES */
 const injectStyles = () => {
     const s = document.createElement('style'); s.id = 'ges-styles';
@@ -81,6 +108,7 @@ const createModal = () => {
 <div class="ges-r"><span class="ges-l">Double Tap đóng tab</span><input id="g-dbl" type="number" class="ges-i" min="150" max="500" step="50">ms</div></div>
 <div class="ges-g"><div class="ges-gt">📜 Edge Swipe</div>
 <div class="ges-r"><span class="ges-l">Bật cuộn nhanh</span><label class="ges-sw"><input type="checkbox" id="g-e"><span class="ges-sl"></span></label></div>
+<div class="ges-r"><span class="ges-l">↳ Vị trí</span><select id="g-eside" class="ges-s"><option value="both">Cả hai</option><option value="left">Trái</option><option value="right">Phải</option></select></div>
 <div class="ges-r"><span class="ges-l">↳ Vùng</span><input id="g-ew" type="number" class="ges-i" min="20" max="100" step="5">px</div>
 <div class="ges-r"><span class="ges-l">↳ Tốc độ</span><input id="g-es" type="number" class="ges-i" min="1" max="10" step="0.5">x</div></div>
 <div class="ges-a"><button class="ges-btn" id="ges-c">Đóng</button><button class="ges-btn p" id="ges-s">Lưu</button></div></div>`;
@@ -90,7 +118,7 @@ const createModal = () => {
     $('ges-s').onclick = () => {
         CFG.lpress = { enabled: $('g-lp').checked, mode: $('g-lpm').value, ms: +$('g-lpms').value || 500 };
         CFG.dblTapMs = +$('g-dbl').value || 300;
-        CFG.edge = { enabled: $('g-e').checked, width: +$('g-ew').value || 40, speed: +$('g-es').value || 3 };
+        CFG.edge = { enabled: $('g-e').checked, side: $('g-eside').value, width: +$('g-ew').value || 40, speed: +$('g-es').value || 3 };
         Config.save(CFG); close(); toast('✓ Đã lưu!');
     };
     d.onclick = e => { if (e.target === d) close(); };
@@ -101,22 +129,30 @@ const openSettings = () => {
     if (!modal) modal = createModal();
     const $ = id => modal.querySelector('#' + id);
     $('g-lp').checked = CFG.lpress.enabled; $('g-lpm').value = CFG.lpress.mode; $('g-lpms').value = CFG.lpress.ms;
-    $('g-dbl').value = CFG.dblTapMs; $('g-e').checked = CFG.edge.enabled; $('g-ew').value = CFG.edge.width; $('g-es').value = CFG.edge.speed;
+    $('g-dbl').value = CFG.dblTapMs; $('g-e').checked = CFG.edge.enabled; $('g-eside').value = CFG.edge.side || 'both';
+    $('g-ew').value = CFG.edge.width; $('g-es').value = CFG.edge.speed;
     requestAnimationFrame(() => modal.classList.add('open'));
 };
 
 /* EVENTS */
 const initEvents = () => {
     const guard = e => { if (Date.now() < State.suppressUntil) { e.preventDefault(); e.stopPropagation(); return true; } return false; };
-    ['click', 'auxclick'].forEach(evt => window.addEventListener(evt, guard, true));
+    ['click', 'auxclick', 'contextmenu'].forEach(evt => window.addEventListener(evt, guard, true));
+
+    // Block context menu when long-press fires
+    window.addEventListener('contextmenu', e => { if (State.lpFired || State.lp.active) { e.preventDefault(); e.stopPropagation(); } }, true);
 
     window.addEventListener('touchstart', e => {
         State.lpFired = false;
+        stopMomentum();
         if (isEditable(e.target) || e.touches.length !== 1) return;
         const t = e.touches[0], now = Date.now();
 
         // Edge swipe
-        if (CFG.edge.enabled && t.clientX < CFG.edge.width) { State.edge = { active: true, lastY: t.clientY }; return; }
+        if (isInEdgeZone(t.clientX)) {
+            State.edge = { active: true, lastY: t.clientY, lastTime: now, velocity: 0 };
+            return;
+        }
 
         // Double tap
         const last = State.dblTap.last;
@@ -141,13 +177,30 @@ const initEvents = () => {
             if (dist(t.clientX, t.clientY, State.lp.x, State.lp.y) > TOL.move) cancelLP();
         }
         if (!State.edge.active || e.touches.length !== 1) { State.edge.active = false; return; }
-        const t = e.touches[0], dy = State.edge.lastY - t.clientY;
+
+        const t = e.touches[0], now = Date.now();
+        const dy = State.edge.lastY - t.clientY;
+        const dt = now - State.edge.lastTime;
+
+        // Calculate velocity for momentum
+        if (dt > 0) State.edge.velocity = (dy * CFG.edge.speed) / dt * 16; // normalize to ~60fps
+
         State.edge.lastY = t.clientY;
+        State.edge.lastTime = now;
+
         (document.scrollingElement || document.documentElement).scrollTop += dy * CFG.edge.speed;
         e.preventDefault();
     }, { capture: true, passive: false });
 
-    ['touchend', 'touchcancel'].forEach(evt => window.addEventListener(evt, () => { cancelLP(); State.edge.active = false; }, true));
+    window.addEventListener('touchend', e => {
+        cancelLP();
+        if (State.edge.active && Math.abs(State.edge.velocity) > 1) {
+            startMomentum(State.edge.velocity);
+        }
+        State.edge.active = false;
+    }, true);
+
+    window.addEventListener('touchcancel', () => { cancelLP(); State.edge.active = false; }, true);
     window.addEventListener('click', e => { if (State.lpFired) { e.preventDefault(); e.stopPropagation(); State.lpFired = false; } }, true);
 };
 
