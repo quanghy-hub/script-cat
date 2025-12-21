@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Floating
 // @namespace    http://tampermonkey.net/
-// @version      5.6.
+// @version      5.5
 // @description  Floating video player optimized for mobile with video rotation
 // @author       Claude
 // @match        *://*/*
@@ -83,7 +83,11 @@
             object-position: center!important; 
             transition: transform 0.3s ease;
             position: absolute; top: 0; left: 0;
-            pointer-events: none;
+        }
+        /* Transparent overlay to block spam click handlers from original video */
+        #fvp-video-shield {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 10; background: transparent;
         }
 
         .fvp-overlay {
@@ -381,7 +385,7 @@
         origPar?.replaceChild(ph, v);
 
         const wrapper = $('fvp-wrapper');
-        wrapper.innerHTML = '';
+        wrapper.innerHTML = '<div id="fvp-video-shield"></div>';
         wrapper.appendChild(v);
 
         v.style.objectFit = FIT[fitIdx];
@@ -510,8 +514,8 @@
                 icon.style.bottom = icon.style.right = 'auto';
                 resetIdle();
             } else if (state.isDrag) {
-                box.style.left = `${clamp(state.initX + dx, 0, innerWidth - box.offsetWidth)}px`;
-                box.style.top = `${clamp(state.initY + dy, 0, innerHeight - box.offsetHeight)}px`;
+                box.style.left = `${state.initX + dx}px`;
+                box.style.top = `${state.initY + dy}px`;
             } else if (state.isResize) {
                 if (state.resizeDir.includes('r')) box.style.width = `${Math.max(200, state.initW + dx)}px`;
                 if (state.resizeDir.includes('b')) box.style.height = `${Math.max(120, state.initH + dy)}px`;
