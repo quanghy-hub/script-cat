@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube
 // @namespace    yt-tools-merged
-// @version      2.6.2
+// @version      2.6.5
 // @description  Screenshot & Bilingual Subtitles with Settings
 // @match        https://www.youtube.com/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/yt.js
