@@ -1,10 +1,9 @@
 // ==UserScript==
 // @name         YouTube
 // @namespace    yt-tools-merged
-// @version      2.6.1
+// @version      2.6.2
 // @description  Screenshot & Bilingual Subtitles with Settings
 // @match        https://www.youtube.com/*
-// @match        https://m.youtube.com/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/yt.js
 // @downloadURL  https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/yt.js
 // @exclude      /^https?://\S+\.(txt|png|jpg|jpeg|gif|xml|svg|manifest|log|ini|webp|webm)[^\/]*$/
@@ -22,33 +21,28 @@
 
     if (window.top !== window) return;
 
-    // ===== TRUSTED TYPES POLICY (for YouTube CSP bypass) =====
-    try {
-        if (typeof trustedTypes !== 'undefined' && !trustedTypes.defaultPolicy) {
-            trustedTypes.createPolicy('default', {
-                createHTML: s => s,
-                createScriptURL: s => s,
-                createScript: s => s
-            });
+    // ===== TRUSTED TYPES (sử dụng default policy từ script riêng) =====
+    const safeHTML = (html) => {
+        if (typeof trustedTypes !== 'undefined' && trustedTypes.defaultPolicy) {
+            return trustedTypes.defaultPolicy.createHTML(html);
         }
-    } catch (e) {
-        // Policy already exists or not supported
-    }
+        return html;
+    };
 
     // ===== CONFIGURATION =====
     const DEFAULT_SETTINGS = {
         targetLang: 'vi',
         fontSize: 16,
+        translatedFontSize: 16,
         originalColor: '#ffffff',
         translatedColor: '#ffeb3b',
-        displayMode: 'compact', // 'compact' | 'full'
+        displayMode: 'compact',
         showOriginal: true,
         autoTranslate: false
     };
 
     let settings = { ...DEFAULT_SETTINGS };
 
-    // Load settings
     try {
         const saved = localStorage.getItem('yt-subtitle-settings');
         if (saved) settings = { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
@@ -62,7 +56,6 @@
     // ===== SELECTORS =====
     const SEL = {
         controls: '.ytp-right-controls',
-        mobileControls: '.player-controls-bottom, .btt-controls-top-buttons',
         screenshotBtn: '.ytp-screenshot-button',
         translateBtn: '.ytp-translate-button',
         settingsBtn: '.ytp-subtitle-settings-button',
@@ -91,7 +84,6 @@
     // ===== UTILITIES =====
     const $ = (sel, ctx = document) => ctx.querySelector(sel);
     const $$ = (sel, ctx = document) => ctx.querySelectorAll(sel);
-    const isMobile = () => /m\.youtube\.com|Android|iPhone|iPad/i.test(navigator.userAgent + location.host);
     const isWatchPage = () => /\/watch|[?&]v=/.test(location.href);
 
     // ===== STYLES =====
@@ -109,14 +101,17 @@
       /* Button styles */
       .ytp-screenshot-button, .ytp-translate-button, .ytp-subtitle-settings-button {
         position: relative;
-        width: ${isMobile() ? '40px' : '48px'};
+        width: 48px;
         height: 100%;
         display: inline-flex !important;
         align-items: center;
         justify-content: center;
         opacity: 0.9;
         transition: opacity 0.1s;
-        padding: ${isMobile() ? '8px' : '0'};
+      }
+      .ytp-screenshot-button svg, .ytp-translate-button svg, .ytp-subtitle-settings-button svg {
+        width: 24px;
+        height: 24px;
       }
       .ytp-screenshot-button:hover, .ytp-translate-button:hover, .ytp-subtitle-settings-button:hover {
         opacity: 1;
@@ -124,25 +119,36 @@
       .ytp-translate-button.active { opacity: 1; color: #ffeb3b; }
       .ytp-translate-button.active svg { fill: #ffeb3b; }
 
-      /* Subtitle styles */
+      /* Subtitle styles - 1 line only */
+      .ytp-caption-window-container {
+        max-height: none !important;
+      }
+      .ytp-caption-window-bottom {
+        max-height: ${settings.fontSize * 3}px !important;
+        overflow: hidden !important;
+      }
       .ytp-caption-segment {
         font-size: ${settings.fontSize}px !important;
         color: ${settings.originalColor} !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        display: inline !important;
         ${compactMode && !settings.showOriginal ? 'display: none !important;' : ''}
       }
       .ytp-caption-segment[data-translated]::after {
         content: attr(data-translated);
-        display: block;
+        display: block !important;
         color: ${settings.translatedColor};
-        font-size: ${compactMode ? settings.fontSize * 0.85 : settings.fontSize}px;
-        margin-top: ${compactMode ? '2px' : '4px'};
+        font-size: ${settings.translatedFontSize}px;
         text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
-        line-height: 1.2;
+        margin-top: 2px;
       }
-      ${compactMode ? `
-        .ytp-caption-window-container { padding: 4px 8px !important; }
-        .captions-text { line-height: 1.3 !important; }
-      ` : ''}
+      .caption-visual-line {
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+      }
 
       /* Settings panel */
       #yt-subtitle-settings {
@@ -226,18 +232,6 @@
         transition: left 0.2s;
       }
       #yt-subtitle-settings .toggle.active::after { left: 22px; }
-
-      /* Mobile fixes */
-      @media (max-width: 768px), (pointer: coarse) {
-        .ytp-screenshot-button, .ytp-translate-button, .ytp-subtitle-settings-button {
-          width: 36px !important;
-          min-width: 36px !important;
-        }
-        .ytp-screenshot-button svg, .ytp-translate-button svg, .ytp-subtitle-settings-button svg {
-          width: 20px !important;
-          height: 20px !important;
-        }
-      }
     `;
     }
 
@@ -247,14 +241,18 @@
 
         const panel = document.createElement('div');
         panel.id = 'yt-subtitle-settings';
-        panel.innerHTML = `
+        panel.innerHTML = safeHTML(`
       <h3>
         Cài đặt phụ đề
         <button class="close-btn">×</button>
       </h3>
       <div class="setting-row">
-        <label>Cỡ chữ</label>
+        <label>Cỡ chữ gốc</label>
         <div><input type="range" id="s-fontsize" min="12" max="32" value="${settings.fontSize}"> <span id="s-fontsize-val">${settings.fontSize}px</span></div>
+      </div>
+      <div class="setting-row">
+        <label>Cỡ chữ dịch</label>
+        <div><input type="range" id="s-trans-fontsize" min="12" max="32" value="${settings.translatedFontSize}"> <span id="s-trans-fontsize-val">${settings.translatedFontSize}px</span></div>
       </div>
       <div class="setting-row">
         <label>Màu gốc</label>
@@ -275,7 +273,7 @@
         <label>Hiện gốc</label>
         <div class="toggle ${settings.showOriginal ? 'active' : ''}" id="s-show-orig"></div>
       </div>
-    `;
+    `);
 
         document.body.appendChild(panel);
 
@@ -284,6 +282,11 @@
         panel.querySelector('#s-fontsize').oninput = (e) => {
             settings.fontSize = parseInt(e.target.value);
             panel.querySelector('#s-fontsize-val').textContent = settings.fontSize + 'px';
+            saveSettings();
+        };
+        panel.querySelector('#s-trans-fontsize').oninput = (e) => {
+            settings.translatedFontSize = parseInt(e.target.value);
+            panel.querySelector('#s-trans-fontsize-val').textContent = settings.translatedFontSize + 'px';
             saveSettings();
         };
         panel.querySelector('#s-orig-color').oninput = (e) => {
@@ -381,8 +384,7 @@
         state.observer = new MutationObserver(() => {
             if (state.translateEnabled) debouncedProcess();
         });
-        const target = $(SEL.captionWindow) || document.body;
-        state.observer.observe(target, { childList: true, subtree: true, characterData: true });
+        state.observer.observe(document.body, { childList: true, subtree: true, characterData: true });
     }
 
     function stopObserver() {
@@ -393,13 +395,18 @@
     // ===== TOGGLE =====
     function toggleTranslation() {
         state.translateEnabled = !state.translateEnabled;
+        console.log('[YT] Translation toggled:', state.translateEnabled);
 
         const btn = $(SEL.translateBtn);
         if (btn) {
             btn.classList.toggle('active', state.translateEnabled);
-            btn.innerHTML = state.translateEnabled ? ICONS.translateActive : ICONS.translate;
+            btn.innerHTML = safeHTML(state.translateEnabled ? ICONS.translateActive : ICONS.translate);
             btn.title = state.translateEnabled ? 'Tắt dịch (T)' : 'Dịch phụ đề (T)';
         }
+
+        // Debug: tìm caption elements
+        const captions = $$(SEL.captionSegment);
+        console.log('[YT] Found captions:', captions.length, SEL.captionSegment);
 
         if (state.translateEnabled) {
             startObserver();
@@ -435,7 +442,7 @@
         const btn = document.createElement('button');
         btn.className = `ytp-button ${className}`;
         btn.title = title;
-        btn.innerHTML = icon;
+        btn.innerHTML = safeHTML(icon);
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             onClick();
@@ -444,38 +451,17 @@
     }
 
     function addButtons() {
-        // Desktop controls
         const controls = $(SEL.controls);
-        if (controls) {
-            if (!$(SEL.settingsBtn)) {
-                controls.insertBefore(createButton('ytp-subtitle-settings-button', 'Cài đặt phụ đề', ICONS.settings, createSettingsPanel), controls.firstChild);
-            }
-            if (!$(SEL.translateBtn)) {
-                controls.insertBefore(createButton('ytp-translate-button', 'Dịch phụ đề (T)', ICONS.translate, toggleTranslation), controls.firstChild);
-            }
-            if (!$(SEL.screenshotBtn)) {
-                controls.insertBefore(createButton('ytp-screenshot-button', 'Chụp màn hình (S)', ICONS.camera, captureScreenshot), controls.firstChild);
-            }
+        if (!controls) return;
+
+        if (!$(SEL.settingsBtn)) {
+            controls.insertBefore(createButton('ytp-subtitle-settings-button', 'Cài đặt phụ đề', ICONS.settings, createSettingsPanel), controls.firstChild);
         }
-
-        // Mobile controls - try multiple selectors
-        if (isMobile()) {
-            const mobileTargets = [
-                '.player-controls-bottom',
-                '.btt-controls-top-buttons',
-                '.player-controls-top',
-                'ytm-player-controls-overlay'
-            ];
-
-            for (const sel of mobileTargets) {
-                const mobileControls = $(sel);
-                if (mobileControls && !mobileControls.querySelector(SEL.translateBtn)) {
-                    const translateBtn = createButton('ytp-translate-button', 'Dịch', ICONS.translate, toggleTranslation);
-                    translateBtn.style.cssText = 'width:36px;height:36px;padding:6px;';
-                    mobileControls.appendChild(translateBtn);
-                    break;
-                }
-            }
+        if (!$(SEL.translateBtn)) {
+            controls.insertBefore(createButton('ytp-translate-button', 'Dịch phụ đề (T)', ICONS.translate, toggleTranslation), controls.firstChild);
+        }
+        if (!$(SEL.screenshotBtn)) {
+            controls.insertBefore(createButton('ytp-screenshot-button', 'Chụp màn hình (S)', ICONS.camera, captureScreenshot), controls.firstChild);
         }
     }
 
@@ -524,8 +510,7 @@
     const pageObserver = new MutationObserver(() => {
         if ($(SEL.controls)) {
             init();
-            // Keep observing for mobile controls
-            if (!isMobile()) pageObserver.disconnect();
+            pageObserver.disconnect();
         }
     });
     pageObserver.observe(document.documentElement, { childList: true, subtree: true });
