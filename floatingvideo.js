@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Floating
 // @namespace    http://tampermonkey.net/
-// @version      5.8
+// @version      5.9
 // @description  Floating video player optimized for mobile with video rotation
 // @author       Claude
 // @match        *://*/*
@@ -484,8 +484,10 @@
                 icon.style.bottom = icon.style.right = 'auto';
                 resetIdle();
             } else if (state.isDrag) {
-                box.style.left = `${clamp(state.initX + dx, 0, innerWidth - box.offsetWidth)}px`;
-                box.style.top = `${clamp(state.initY + dy, 0, innerHeight - box.offsetHeight)}px`;
+                // Allow dragging beyond edges, keep at least 60px visible
+                const minVisible = 60;
+                box.style.left = `${clamp(state.initX + dx, -box.offsetWidth + minVisible, innerWidth - minVisible)}px`;
+                box.style.top = `${clamp(state.initY + dy, -box.offsetHeight + minVisible, innerHeight - minVisible)}px`;
             } else if (state.isResize) {
                 if (state.resizeDir.includes('r')) box.style.width = `${Math.max(200, state.initW + dx)}px`;
                 if (state.resizeDir.includes('b')) box.style.height = `${Math.max(120, state.initH + dy)}px`;
