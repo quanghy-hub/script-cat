@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Mobile Gestures
 // @namespace    mobile-gestures
-// @version      1.0.1
+// @version      1.1.1
 // @description  Long-press mở link, Double-tap đóng tab, Edge swipe scroll
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
@@ -18,7 +18,7 @@
 'use strict';
 
 const STORAGE_KEY = 'ges_mobile_v1';
-const DEFAULTS = { lpress: { enabled: true, mode: 'bg', ms: 500 }, dblTapMs: 300, edge: { enabled: true, width: 40, speed: 3, side: 'both' } };
+const DEFAULTS = { lpress: { enabled: true, mode: 'bg', ms: 500 }, dblTap: { enabled: false, ms: 300 }, edge: { enabled: true, width: 40, speed: 3, side: 'both' } };
 
 const Config = {
     _c: null,
@@ -26,11 +26,11 @@ const Config = {
         if (this._c) return this._c;
         try {
             const s = JSON.parse(GM_getValue(STORAGE_KEY) || '{}');
-            this._c = { lpress: { ...DEFAULTS.lpress, ...s.lpress }, edge: { ...DEFAULTS.edge, ...s.edge }, dblTapMs: s.dblTapMs ?? DEFAULTS.dblTapMs };
+            this._c = { lpress: { ...DEFAULTS.lpress, ...s.lpress }, dblTap: { ...DEFAULTS.dblTap, ...s.dblTap }, edge: { ...DEFAULTS.edge, ...s.edge } };
         } catch { this._c = { ...DEFAULTS }; }
         return this._c;
     },
-    save(c) { GM_setValue(STORAGE_KEY, JSON.stringify({ lpress: c.lpress, edge: c.edge, dblTapMs: c.dblTapMs })); this._c = c; }
+    save(c) { GM_setValue(STORAGE_KEY, JSON.stringify({ lpress: c.lpress, dblTap: c.dblTap, edge: c.edge })); this._c = c; }
 };
 
 let CFG = Config.get();
@@ -39,6 +39,7 @@ const TOL = { move: 20, tap: 30 };
 const dist = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
 const suppress = (ms = 500) => { State.suppressUntil = Date.now() + ms; };
 const isEditable = el => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+const isInteractive = el => { if (!el) return false; const t = el.tagName; return t === 'A' || t === 'BUTTON' || t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA' || t === 'VIDEO' || t === 'AUDIO' || el.onclick || el.closest?.('button, a, [role="button"], [onclick]'); };
 const getValidLink = ev => { for (const n of (ev.composedPath?.() || [])) if (n.tagName === 'A' && n.href && !/^(javascript|mailto|tel|sms|#):/.test(n.href)) return n; return null; };
 const cancelLP = () => { clearTimeout(State.lp.timer); State.lp.timer = null; State.lp.active = false; };
 
@@ -60,7 +61,7 @@ const openTab = (url, mode) => {
 const closeTab = () => {
     try { window.close(); } catch { }
     try { window.open('', '_self'); window.close(); } catch { }
-    try { if (history.length > 1) history.back(); } catch { }
+    // Removed history.back() fallback - it causes unexpected navigation
     suppress(600);
 };
 
@@ -105,7 +106,8 @@ const createModal = () => {
 <div class="ges-r"><span class="ges-l">Long-press mở link</span><label class="ges-sw"><input type="checkbox" id="g-lp"><span class="ges-sl"></span></label></div>
 <div class="ges-r"><span class="ges-l">↳ Chế độ</span><select id="g-lpm" class="ges-s"><option value="bg">Nền</option><option value="fg">Trước</option></select></div>
 <div class="ges-r"><span class="ges-l">↳ Thời gian</span><input id="g-lpms" type="number" class="ges-i" min="200" max="2000" step="50">ms</div>
-<div class="ges-r"><span class="ges-l">Double Tap đóng tab</span><input id="g-dbl" type="number" class="ges-i" min="150" max="500" step="50">ms</div></div>
+<div class="ges-r"><span class="ges-l">Double Tap đóng tab</span><label class="ges-sw"><input type="checkbox" id="g-dbl"><span class="ges-sl"></span></label></div>
+<div class="ges-r"><span class="ges-l">↳ Thời gian</span><input id="g-dblms" type="number" class="ges-i" min="150" max="500" step="50">ms</div></div>
 <div class="ges-g"><div class="ges-gt">📜 Edge Swipe</div>
 <div class="ges-r"><span class="ges-l">Bật cuộn nhanh</span><label class="ges-sw"><input type="checkbox" id="g-e"><span class="ges-sl"></span></label></div>
 <div class="ges-r"><span class="ges-l">↳ Vị trí</span><select id="g-eside" class="ges-s"><option value="both">Cả hai</option><option value="left">Trái</option><option value="right">Phải</option></select></div>
@@ -117,7 +119,7 @@ const createModal = () => {
     $('ges-c').onclick = close;
     $('ges-s').onclick = () => {
         CFG.lpress = { enabled: $('g-lp').checked, mode: $('g-lpm').value, ms: +$('g-lpms').value || 500 };
-        CFG.dblTapMs = +$('g-dbl').value || 300;
+        CFG.dblTap = { enabled: $('g-dbl').checked, ms: +$('g-dblms').value || 300 };
         CFG.edge = { enabled: $('g-e').checked, side: $('g-eside').value, width: +$('g-ew').value || 40, speed: +$('g-es').value || 3 };
         Config.save(CFG); close(); toast('✓ Đã lưu!');
     };
@@ -129,7 +131,8 @@ const openSettings = () => {
     if (!modal) modal = createModal();
     const $ = id => modal.querySelector('#' + id);
     $('g-lp').checked = CFG.lpress.enabled; $('g-lpm').value = CFG.lpress.mode; $('g-lpms').value = CFG.lpress.ms;
-    $('g-dbl').value = CFG.dblTapMs; $('g-e').checked = CFG.edge.enabled; $('g-eside').value = CFG.edge.side || 'both';
+    $('g-dbl').checked = CFG.dblTap.enabled; $('g-dblms').value = CFG.dblTap.ms;
+    $('g-e').checked = CFG.edge.enabled; $('g-eside').value = CFG.edge.side || 'both';
     $('g-ew').value = CFG.edge.width; $('g-es').value = CFG.edge.speed;
     requestAnimationFrame(() => modal.classList.add('open'));
 };
@@ -154,12 +157,14 @@ const initEvents = () => {
             return;
         }
 
-        // Double tap
-        const last = State.dblTap.last;
-        if (last && now - last.time < CFG.dblTapMs && dist(t.clientX, t.clientY, last.x, last.y) < TOL.tap) {
-            e.preventDefault(); e.stopPropagation(); State.dblTap.last = null; closeTab(); return;
+        // Double tap - only if enabled AND not on interactive element
+        if (CFG.dblTap.enabled && !isInteractive(e.target)) {
+            const last = State.dblTap.last;
+            if (last && now - last.time < CFG.dblTap.ms && dist(t.clientX, t.clientY, last.x, last.y) < TOL.tap) {
+                e.preventDefault(); e.stopPropagation(); State.dblTap.last = null; closeTab(); return;
+            }
+            State.dblTap.last = { time: now, x: t.clientX, y: t.clientY };
         }
-        State.dblTap.last = { time: now, x: t.clientX, y: t.clientY };
 
         // Long press
         if (!CFG.lpress.enabled) return;
