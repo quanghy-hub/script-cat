@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gestures
 // @namespace    unified-gestures-forum
-// @version      3.0.1
+// @version      3.1.0
 // @description  Long-press/Right-click mở link, Double-tap đóng tab, Edge swipe scroll, Forum fit & Pager
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
@@ -24,7 +24,7 @@ const DEFAULTS = {
     lpress: { enabled: true, mode: 'bg', ms: 500 },
     rclick: { enabled: true, mode: 'fg' },
     dblRightMs: 500,
-    dblTapMs: 300,
+    dblTap: { enabled: false, ms: 300 },
     edge: { enabled: true, width: 40, speed: 3 },
     forum: { enabled: false, mode: 'fit', maxWidth: 1600, hideSidebar: false, mediaFit: true, selector: '' },
     pager: { enabled: true, threshold: 80, window: 1000, hops: 3 }
@@ -43,7 +43,7 @@ const Config = {
                 forum: { ...DEFAULTS.forum, ...(saved.forumHosts?.[HOST] || {}) },
                 pager: { ...DEFAULTS.pager, ...saved.pager },
                 dblRightMs: saved.dblRightMs ?? DEFAULTS.dblRightMs,
-                dblTapMs: saved.dblTapMs ?? DEFAULTS.dblTapMs,
+                dblTap: { ...DEFAULTS.dblTap, ...saved.dblTap },
                 _forumHosts: saved.forumHosts || {}
             };
         } catch { this._cache = { ...DEFAULTS, forum: { ...DEFAULTS.forum }, _forumHosts: {} }; }
@@ -53,7 +53,7 @@ const Config = {
         cfg._forumHosts[HOST] = cfg.forum;
         GM_setValue(STORAGE_KEY, JSON.stringify({
             lpress: cfg.lpress, rclick: cfg.rclick, edge: cfg.edge, pager: cfg.pager,
-            dblRightMs: cfg.dblRightMs, dblTapMs: cfg.dblTapMs, forumHosts: cfg._forumHosts
+            dblRightMs: cfg.dblRightMs, dblTap: cfg.dblTap, forumHosts: cfg._forumHosts
         }));
         this._cache = cfg;
     }
@@ -74,6 +74,7 @@ const TOL = { move: 20, tap: 30 };
 const dist = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
 const suppress = (ms = 500) => { State.suppressUntil = Date.now() + ms; };
 const isEditable = el => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+const isInteractive = el => { if (!el) return false; const t = el.tagName; return t === 'A' || t === 'BUTTON' || t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA' || t === 'VIDEO' || t === 'AUDIO' || el.onclick || el.closest?.('button, a, [role="button"], [onclick]'); };
 
 const getValidLink = ev => {
     for (const n of (ev.composedPath?.() || [])) {
@@ -92,7 +93,7 @@ const openTab = (url, mode) => {
 const closeTab = () => {
     try { window.close(); } catch { }
     try { window.open('', '_self'); window.close(); } catch { }
-    try { if (history.length > 1) history.back(); } catch { }
+    // Removed history.back() fallback - it causes unexpected navigation
     suppress(600);
 };
 
@@ -208,7 +209,8 @@ const createModal = () => {
             </div>
             <div class="ges-group">
                 <div class="ges-group-title">📱 Mobile</div>
-                <div class="ges-row"><span class="ges-label">Double Tap đóng tab</span><input id="g-dblt" type="number" class="ges-input" min="150" max="500" step="50">ms</div>
+                <div class="ges-row"><span class="ges-label">Double Tap đóng tab</span><label class="ges-switch"><input type="checkbox" id="g-dblt-en"><span class="ges-slider"></span></label></div>
+                <div class="ges-row"><span class="ges-label">↳ Thời gian</span><input id="g-dblt" type="number" class="ges-input" min="150" max="500" step="50">ms</div>
                 <div class="ges-row"><span class="ges-label">Edge Swipe cuộn nhanh</span><label class="ges-switch"><input type="checkbox" id="g-edge-en"><span class="ges-slider"></span></label></div>
                 <div class="ges-row"><span class="ges-label">↳ Vùng</span><input id="g-edge-w" type="number" class="ges-input" min="20" max="100" step="5">px</div>
                 <div class="ges-row"><span class="ges-label">↳ Tốc độ</span><input id="g-edge-s" type="number" class="ges-input" min="1" max="10" step="0.5">x</div>
@@ -239,7 +241,7 @@ const createModal = () => {
         CFG.lpress = { enabled: $('g-lp-en').checked, mode: $('g-lp-mode').value, ms: +$('g-lp-ms').value || 500 };
         CFG.rclick = { enabled: $('g-rc-en').checked, mode: $('g-rc-mode').value };
         CFG.dblRightMs = +$('g-dblr').value || 500;
-        CFG.dblTapMs = +$('g-dblt').value || 300;
+        CFG.dblTap = { enabled: $('g-dblt-en').checked, ms: +$('g-dblt').value || 300 };
         CFG.edge = { enabled: $('g-edge-en').checked, width: +$('g-edge-w').value || 40, speed: +$('g-edge-s').value || 3 };
         CFG.forum = { enabled: $('f-en').checked, mode: $('f-mode').value, maxWidth: +$('f-width').value || 1600, hideSidebar: $('f-sidebar').checked, mediaFit: $('f-media').checked, selector: $('f-sel').value };
         CFG.pager.enabled = $('p-en').checked;
@@ -261,7 +263,8 @@ const syncModal = () => {
     $('g-rc-en').checked = CFG.rclick.enabled;
     $('g-rc-mode').value = CFG.rclick.mode;
     $('g-dblr').value = CFG.dblRightMs;
-    $('g-dblt').value = CFG.dblTapMs;
+    $('g-dblt-en').checked = CFG.dblTap.enabled;
+    $('g-dblt').value = CFG.dblTap.ms;
     $('g-edge-en').checked = CFG.edge.enabled;
     $('g-edge-w').value = CFG.edge.width;
     $('g-edge-s').value = CFG.edge.speed;
@@ -286,6 +289,9 @@ const initEvents = () => {
     const guard = e => { if (Date.now() < State.suppressUntil) { e.preventDefault(); e.stopPropagation(); return true; } return false; };
     ['click', 'auxclick', 'contextmenu'].forEach(evt => window.addEventListener(evt, guard, true));
 
+    // Block context menu when long-press fires
+    window.addEventListener('contextmenu', e => { if (State.lpFired || State.lp.active) { e.preventDefault(); e.stopPropagation(); } }, true);
+
     // Long Press
     window.addEventListener('pointerdown', e => {
         State.lpFired = false;
@@ -305,9 +311,11 @@ const initEvents = () => {
     ['pointerup', 'pointercancel'].forEach(evt => window.addEventListener(evt, cancelLP, true));
     window.addEventListener('click', e => { if (State.lpFired) { e.preventDefault(); e.stopPropagation(); State.lpFired = false; } }, true);
 
-    // Double Right Click
+    // Double Right Click - skip if on a valid link (let contextmenu handle it)
     window.addEventListener('mousedown', e => {
         if (e.button !== 2 || isEditable(e.target)) return;
+        // Don't process double-right-click if on a link (to avoid closing tab when opening link)
+        if (CFG.rclick.enabled && getValidLink(e)) return;
         const now = Date.now(), s = State.dblRight;
         if (now - s.lastTime < CFG.dblRightMs && dist(e.clientX, e.clientY, s.x, s.y) < TOL.move) {
             e.preventDefault(); e.stopPropagation(); s.lastTime = 0; closeTab();
@@ -318,18 +326,26 @@ const initEvents = () => {
     window.addEventListener('contextmenu', e => {
         if (guard(e) || !CFG.rclick.enabled || e.button !== 2) return;
         const link = getValidLink(e);
-        if (link) { e.preventDefault(); e.stopPropagation(); openTab(link.href, CFG.rclick.mode); }
+        if (link) {
+            e.preventDefault(); e.stopPropagation();
+            openTab(link.href, CFG.rclick.mode);
+        }
     }, true);
 
     // Touch
     window.addEventListener('touchstart', e => {
+        State.lpFired = false;
         if (isEditable(e.target) || e.touches.length !== 1) return;
         const t = e.touches[0], now = Date.now();
         if (CFG.edge.enabled && t.clientX < CFG.edge.width) { State.edge = { active: true, lastY: t.clientY }; cancelLP(); return; }
-        const last = State.dblTap.last;
-        if (last && now - last.time < CFG.dblTapMs && dist(t.clientX, t.clientY, last.x, last.y) < TOL.tap) {
-            e.preventDefault(); e.stopPropagation(); State.dblTap.last = null; closeTab();
-        } else { State.dblTap.last = { time: now, x: t.clientX, y: t.clientY }; }
+        // Double tap - only if enabled AND not on interactive element
+        if (CFG.dblTap.enabled && !isInteractive(e.target)) {
+            const last = State.dblTap.last;
+            if (last && now - last.time < CFG.dblTap.ms && dist(t.clientX, t.clientY, last.x, last.y) < TOL.tap) {
+                e.preventDefault(); e.stopPropagation(); State.dblTap.last = null; closeTab(); return;
+            }
+            State.dblTap.last = { time: now, x: t.clientX, y: t.clientY };
+        }
     }, { capture: true, passive: false });
 
     window.addEventListener('touchmove', e => {
