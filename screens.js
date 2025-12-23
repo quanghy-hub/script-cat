@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Screenshot
 // @namespace    video-screenshot
-// @version      1.0.0
+// @version      1.1.0
 // @description  Screenshot any video on any website
 // @match        *://*/*
 // @exclude      /^https?://\S+\.(txt|png|jpg|jpeg|gif|xml|svg|manifest|log|ini)[^\/]*$/
