@@ -1,12 +1,10 @@
 // ==UserScript==
 // @name         Gestures
-// @namespace    unified-gestures-forum
-// @version      3.2.0
-// @description  Long-press/Right-click mở link, Double-tap đóng tab, Edge swipe scroll, Forum fit & Pager
+// @namespace    unified-gestures
+// @version      4.0.0
+// @description  Long-press/Right-click mở link, Double-tap đóng tab, Edge swipe scroll, Pager
 // @match        *://*/*
-// @exclude      *://mail.google.com/*
 // @run-at       document-start
-// @noframes
 // @grant        GM_registerMenuCommand
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -17,8 +15,7 @@
 
 'use strict';
 
-const HOST = location.host;
-const STORAGE_KEY = 'ges_forum_v1';
+const STORAGE_KEY = 'ges_v4';
 
 const DEFAULTS = {
     lpress: { enabled: true, mode: 'bg', ms: 500 },
@@ -26,7 +23,6 @@ const DEFAULTS = {
     dblRightMs: 500,
     dblTap: { enabled: false, ms: 300 },
     edge: { enabled: true, width: 40, speed: 3 },
-    forum: { enabled: false, mode: 'fit', maxWidth: 1600, hideSidebar: false, mediaFit: true, selector: '' },
     pager: { enabled: true, threshold: 80, window: 1000, hops: 3 }
 };
 
@@ -40,20 +36,17 @@ const Config = {
                 lpress: { ...DEFAULTS.lpress, ...saved.lpress },
                 rclick: { ...DEFAULTS.rclick, ...saved.rclick },
                 edge: { ...DEFAULTS.edge, ...saved.edge },
-                forum: { ...DEFAULTS.forum, ...(saved.forumHosts?.[HOST] || {}) },
                 pager: { ...DEFAULTS.pager, ...saved.pager },
                 dblRightMs: saved.dblRightMs ?? DEFAULTS.dblRightMs,
-                dblTap: { ...DEFAULTS.dblTap, ...saved.dblTap },
-                _forumHosts: saved.forumHosts || {}
+                dblTap: { ...DEFAULTS.dblTap, ...saved.dblTap }
             };
-        } catch { this._cache = { ...DEFAULTS, forum: { ...DEFAULTS.forum }, _forumHosts: {} }; }
+        } catch { this._cache = { ...DEFAULTS }; }
         return this._cache;
     },
     save(cfg) {
-        cfg._forumHosts[HOST] = cfg.forum;
         GM_setValue(STORAGE_KEY, JSON.stringify({
             lpress: cfg.lpress, rclick: cfg.rclick, edge: cfg.edge, pager: cfg.pager,
-            dblRightMs: cfg.dblRightMs, dblTap: cfg.dblTap, forumHosts: cfg._forumHosts
+            dblRightMs: cfg.dblRightMs, dblTap: cfg.dblTap
         }));
         this._cache = cfg;
     }
@@ -93,7 +86,6 @@ const openTab = (url, mode) => {
 const closeTab = () => {
     try { window.close(); } catch { }
     try { window.open('', '_self'); window.close(); } catch { }
-    // Removed history.back() fallback - it causes unexpected navigation
     suppress(600);
 };
 
@@ -104,24 +96,6 @@ const toast = msg => {
     if (!t) { t = document.createElement('div'); t.id = 'ges-toast'; document.body.appendChild(t); }
     t.textContent = msg; t.style.opacity = '1';
     clearTimeout(t._timer); t._timer = setTimeout(() => t.style.opacity = '0', 2000);
-};
-
-/* FORUM FIT */
-const FORUM_SELECTORS = '.p-body-inner,.p-pageWrapper,.pageWidth,#content,.container,.container-fluid,#wrap,.wrap,#page,main,.site-content';
-
-const updateForum = () => {
-    const { enabled, mode, maxWidth, hideSidebar, mediaFit } = CFG.forum;
-    document.documentElement.style.setProperty('--ff-max-w', mode === 'fit' ? 'min(98vw, 2400px)' : `${maxWidth}px`);
-    document.documentElement.classList.toggle('ff-on', enabled);
-    document.documentElement.classList.toggle('ff-hide-sb', enabled && hideSidebar);
-    document.documentElement.classList.toggle('ff-media', enabled && mediaFit);
-};
-
-const detectTargets = () => {
-    if (!CFG.forum.enabled) return;
-    document.querySelectorAll(CFG.forum.selector || FORUM_SELECTORS).forEach(el => {
-        if (el.offsetParent !== null) el.classList.add('ff-target');
-    });
 };
 
 /* PAGER */
@@ -152,26 +126,19 @@ const injectStyles = () => {
     const s = document.createElement('style');
     s.id = 'ges-styles';
     s.textContent = `
-        :root{--ff-max-w:100%}
-        html.ff-on body{overflow-x:hidden;scrollbar-gutter:stable}
-        html.ff-on .ff-target,html.ff-on .p-body-inner,html.ff-on .pageWidth,html.ff-on .container,html.ff-on .wrap,html.ff-on #content,html.ff-on main{max-width:var(--ff-max-w)!important;width:min(100%,var(--ff-max-w))!important;margin-inline:auto!important;box-sizing:border-box!important}
-        html.ff-on.ff-hide-sb aside,html.ff-on.ff-hide-sb [class*="sidebar"]{display:none!important}
-        html.ff-on.ff-media img,html.ff-on.ff-media iframe{max-width:100%!important;height:auto}
         #ges-toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#1a1a1ae6;color:#fff;padding:8px 16px;border-radius:20px;font:13px/1.4 system-ui;z-index:2147483647;pointer-events:none;opacity:0;transition:opacity .2s}
         #ges-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2147483646;opacity:0;pointer-events:none;transition:opacity .2s}
         #ges-overlay.open{opacity:1;pointer-events:auto}
-        #ges-panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.95);width:min(400px,90vw);max-height:85vh;overflow-y:auto;background:#1e1e1e;padding:16px;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);font:13px/1.5 system-ui;z-index:2147483647;opacity:0;pointer-events:none;transition:.2s;color:#eee}
+        #ges-panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.95);width:min(360px,90vw);max-height:85vh;overflow-y:auto;background:#1e1e1e;padding:16px;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);font:13px/1.5 system-ui;z-index:2147483647;opacity:0;pointer-events:none;transition:.2s;color:#eee}
         #ges-overlay.open #ges-panel{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto}
         .ges-head{margin-bottom:12px;border-bottom:1px solid #333;padding-bottom:10px}
         .ges-title{font-weight:700;font-size:15px;margin:0;color:#fff}
-        .ges-sub{font-size:11px;color:#888;margin-top:3px}
         .ges-group{background:#2a2a2a;padding:10px 12px;border-radius:10px;margin-bottom:10px}
         .ges-group-title{font-size:10px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:8px;letter-spacing:.5px}
         .ges-row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
         .ges-row:last-child{margin-bottom:0}
         .ges-label{flex:1;color:#ddd}
         .ges-input,.ges-select{border:1px solid #444;background:#333;color:#fff;border-radius:5px;padding:4px 8px;width:70px;text-align:right;font:inherit}
-        .ges-input.long{width:100%;text-align:left}
         .ges-select{width:auto;text-align:left}
         .ges-switch{position:relative;width:36px;height:20px;flex-shrink:0}
         .ges-switch input{opacity:0;width:0;height:0}
@@ -197,7 +164,7 @@ const createModal = () => {
     div.id = 'ges-overlay';
     div.innerHTML = `
         <div id="ges-panel">
-            <div class="ges-head"><h3 class="ges-title">⚙️ Gestures + Forum</h3><div class="ges-sub">${HOST}</div></div>
+            <div class="ges-head"><h3 class="ges-title">⚙️ Gestures</h3></div>
             <div class="ges-group">
                 <div class="ges-group-title">🖱️ Chuột</div>
                 <div class="ges-row"><span class="ges-label">Long-press mở link</span><label class="ges-switch"><input type="checkbox" id="g-lp-en"><span class="ges-slider"></span></label></div>
@@ -214,15 +181,6 @@ const createModal = () => {
                 <div class="ges-row"><span class="ges-label">Edge Swipe cuộn nhanh</span><label class="ges-switch"><input type="checkbox" id="g-edge-en"><span class="ges-slider"></span></label></div>
                 <div class="ges-row"><span class="ges-label">↳ Vùng</span><input id="g-edge-w" type="number" class="ges-input" min="20" max="100" step="5">px</div>
                 <div class="ges-row"><span class="ges-label">↳ Tốc độ</span><input id="g-edge-s" type="number" class="ges-input" min="1" max="10" step="0.5">x</div>
-            </div>
-            <div class="ges-group">
-                <div class="ges-group-title">📐 Forum Fit</div>
-                <div class="ges-row"><span class="ges-label">Bật</span><label class="ges-switch"><input type="checkbox" id="f-en"><span class="ges-slider"></span></label></div>
-                <div class="ges-row"><span class="ges-label">Chế độ</span><select id="f-mode" class="ges-select"><option value="fit">Fit</option><option value="custom">Tùy chỉnh</option></select></div>
-                <div class="ges-row" id="f-row-w"><span class="ges-label">Độ rộng</span><input id="f-width" type="number" class="ges-input" step="50">px</div>
-                <div class="ges-row"><span class="ges-label">Ẩn Sidebar</span><label class="ges-switch"><input type="checkbox" id="f-sidebar"><span class="ges-slider"></span></label></div>
-                <div class="ges-row"><span class="ges-label">Fit ảnh/video</span><label class="ges-switch"><input type="checkbox" id="f-media"><span class="ges-slider"></span></label></div>
-                <div class="ges-row"><input id="f-sel" type="text" class="ges-input long" placeholder="Selector (.wrap, #content...)"></div>
             </div>
             <div class="ges-group">
                 <div class="ges-group-title">📄 Pager</div>
@@ -243,13 +201,10 @@ const createModal = () => {
         CFG.dblRightMs = +$('g-dblr').value || 500;
         CFG.dblTap = { enabled: $('g-dblt-en').checked, ms: +$('g-dblt').value || 300 };
         CFG.edge = { enabled: $('g-edge-en').checked, width: +$('g-edge-w').value || 40, speed: +$('g-edge-s').value || 3 };
-        CFG.forum = { enabled: $('f-en').checked, mode: $('f-mode').value, maxWidth: +$('f-width').value || 1600, hideSidebar: $('f-sidebar').checked, mediaFit: $('f-media').checked, selector: $('f-sel').value };
         CFG.pager.enabled = $('p-en').checked;
         Config.save(CFG);
-        updateForum(); detectTargets();
         close(); toast('✓ Đã lưu!');
     };
-    $('f-mode').onchange = e => $('f-row-w').style.display = e.target.value === 'custom' ? 'flex' : 'none';
     div.onclick = e => { if (e.target === div) close(); };
     return div;
 };
@@ -268,14 +223,7 @@ const syncModal = () => {
     $('g-edge-en').checked = CFG.edge.enabled;
     $('g-edge-w').value = CFG.edge.width;
     $('g-edge-s').value = CFG.edge.speed;
-    $('f-en').checked = CFG.forum.enabled;
-    $('f-mode').value = CFG.forum.mode;
-    $('f-width').value = CFG.forum.maxWidth;
-    $('f-sidebar').checked = CFG.forum.hideSidebar;
-    $('f-media').checked = CFG.forum.mediaFit;
-    $('f-sel').value = CFG.forum.selector || '';
     $('p-en').checked = CFG.pager.enabled;
-    $('f-row-w').style.display = CFG.forum.mode === 'custom' ? 'flex' : 'none';
 };
 
 const openSettings = () => {
@@ -289,7 +237,6 @@ const initEvents = () => {
     const guard = e => { if (Date.now() < State.suppressUntil) { e.preventDefault(); e.stopPropagation(); return true; } return false; };
     ['click', 'auxclick', 'contextmenu'].forEach(evt => window.addEventListener(evt, guard, true));
 
-    // Block context menu when long-press fires
     window.addEventListener('contextmenu', e => { if (State.lpFired || State.lp.active) { e.preventDefault(); e.stopPropagation(); } }, true);
 
     // Long Press
@@ -311,10 +258,9 @@ const initEvents = () => {
     ['pointerup', 'pointercancel'].forEach(evt => window.addEventListener(evt, cancelLP, true));
     window.addEventListener('click', e => { if (State.lpFired) { e.preventDefault(); e.stopPropagation(); State.lpFired = false; } }, true);
 
-    // Double Right Click - skip if on a valid link (let contextmenu handle it)
+    // Double Right Click
     window.addEventListener('mousedown', e => {
         if (e.button !== 2 || isEditable(e.target)) return;
-        // Don't process double-right-click if on a link (to avoid closing tab when opening link)
         if (CFG.rclick.enabled && getValidLink(e)) return;
         const now = Date.now(), s = State.dblRight;
         if (now - s.lastTime < CFG.dblRightMs && dist(e.clientX, e.clientY, s.x, s.y) < TOL.move) {
@@ -326,10 +272,7 @@ const initEvents = () => {
     window.addEventListener('contextmenu', e => {
         if (guard(e) || !CFG.rclick.enabled || e.button !== 2) return;
         const link = getValidLink(e);
-        if (link) {
-            e.preventDefault(); e.stopPropagation();
-            openTab(link.href, CFG.rclick.mode);
-        }
+        if (link) { e.preventDefault(); e.stopPropagation(); openTab(link.href, CFG.rclick.mode); }
     }, true);
 
     // Touch
@@ -338,29 +281,20 @@ const initEvents = () => {
         if (isEditable(e.target) || e.touches.length !== 1) return;
         const t = e.touches[0], now = Date.now();
         if (CFG.edge.enabled && t.clientX < CFG.edge.width) { State.edge = { active: true, lastY: t.clientY }; cancelLP(); return; }
-        // Double tap - only if enabled AND not on interactive element
-        // Requires previous tap to be completed (ended:true) to prevent synthetic events
         if (CFG.dblTap.enabled && !isInteractive(e.target)) {
             const last = State.dblTap.last;
             const timeSinceLast = last ? now - last.time : Infinity;
-            // Must have: ended, within ms window, but at least 100ms gap (prevents synthetic events)
             if (last && last.ended && timeSinceLast >= 100 && timeSinceLast < CFG.dblTap.ms && dist(t.clientX, t.clientY, last.x, last.y) < TOL.tap) {
                 e.preventDefault(); e.stopPropagation(); State.dblTap.last = null; closeTab(); return;
             }
-            // Only save new tap if this isn't a duplicate event (at least 50ms since last touchstart)
-            if (!last || timeSinceLast > 50) {
-                State.dblTap.last = { time: now, x: t.clientX, y: t.clientY, ended: false };
-            }
+            if (!last || timeSinceLast > 50) State.dblTap.last = { time: now, x: t.clientX, y: t.clientY, ended: false };
         }
     }, { capture: true, passive: false });
 
     window.addEventListener('touchmove', e => {
-        // Reset double-tap nếu di chuyển quá xa
         if (State.dblTap.last && e.touches.length === 1) {
             const t = e.touches[0];
-            if (dist(t.clientX, t.clientY, State.dblTap.last.x, State.dblTap.last.y) > TOL.tap) {
-                State.dblTap.last = null;
-            }
+            if (dist(t.clientX, t.clientY, State.dblTap.last.x, State.dblTap.last.y) > TOL.tap) State.dblTap.last = null;
         }
         if (!State.edge.active || e.touches.length !== 1) { State.edge.active = false; return; }
         const t = e.touches[0], dy = State.edge.lastY - t.clientY;
@@ -371,16 +305,11 @@ const initEvents = () => {
 
     window.addEventListener('touchend', () => {
         State.edge.active = false;
-        // Mark tap as completed and auto-expire after timeout
         if (State.dblTap.last && !State.dblTap.last.ended) {
             State.dblTap.last.ended = true;
-            State.dblTap.last.time = Date.now(); // Update time to when tap ended
+            State.dblTap.last.time = Date.now();
             const savedTime = State.dblTap.last.time;
-            setTimeout(() => {
-                if (State.dblTap.last && State.dblTap.last.time === savedTime) {
-                    State.dblTap.last = null;
-                }
-            }, CFG.dblTap.ms + 50);
+            setTimeout(() => { if (State.dblTap.last && State.dblTap.last.time === savedTime) State.dblTap.last = null; }, CFG.dblTap.ms + 50);
         }
     }, true);
     window.addEventListener('touchcancel', () => { State.edge.active = false; State.dblTap.last = null; }, true);
@@ -410,13 +339,8 @@ const initEvents = () => {
 
 /* INIT */
 injectStyles();
-updateForum();
 
-const init = () => {
-    detectTargets();
-    new MutationObserver(detectTargets).observe(document.body, { childList: true, subtree: true });
-    initEvents();
-};
+const init = () => { initEvents(); };
 
 if (document.body) init();
 else document.addEventListener('DOMContentLoaded', init);
