@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YSub
 // @namespace    yt
-// @version      2.8.0
-// @description  Bilingual Subtitles with Settings
+// @version      2.9.0
+// @description  Bilingual Subtitles with Settings and Drag Support
 // @match        https://www.youtube.com/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/yt.js
 // @downloadURL  https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/yt.js
@@ -22,7 +22,9 @@
     const CONFIG = {
         STORAGE_KEY: 'yt-subtitle-settings',
         CACHE_LIMIT: 500,
-        DEBOUNCE_MS: 100,
+        DEBOUNCE_MS: 300,           // Tăng debounce để giảm cập nhật
+        SENTENCE_STABLE_MS: 800,    // Đợi câu ổn định trước khi dịch
+        MIN_TEXT_LENGTH: 15,        // Độ dài tối thiểu để bắt đầu dịch
         TRANSLATE_API: 'https://translate.googleapis.com/translate_a/single'
     };
 
@@ -64,7 +66,9 @@
             originalColor: '#ffffff',
             translatedColor: '#ffeb3b',
             displayMode: 'compact',
-            showOriginal: true
+            showOriginal: true,
+            containerPosition: { x: '5%', y: '70px' }, // Vị trí container
+            containerAlignment: 'left' // Canh lề: left, center, right
         },
         current: null,
 
@@ -90,6 +94,13 @@
         set(key, value) {
             this.current[key] = value;
             this.save();
+        },
+
+        // Lưu vị trí container
+        saveContainerPosition(x, y, alignment = 'left') {
+            this.current.containerPosition = { x, y };
+            this.current.containerAlignment = alignment;
+            this.save();
         }
     };
 
@@ -98,7 +109,321 @@
         translateEnabled: false,
         observer: null,
         processTimeout: null,
-        cache: new Map()
+        sentenceTimeout: null,
+        cache: new Map(),
+        isDragging: false,
+        dragStartPos: { x: 0, y: 0 },
+        containerStartPos: { x: 0, y: 0 },
+        currentDragPos: null,
+        lastRawText: '',
+        lastStableText: '',
+        pendingText: ''
+    };
+
+    // ==================== DRAG MANAGER ====================
+    const DragManager = {
+        // Lưu trữ các handler đã bind để có thể remove đúng cách
+        _boundHandlers: null,
+        _currentContainer: null,
+
+        init(container) {
+            if (!container) return;
+
+            // Nếu đã init container này rồi thì bỏ qua
+            if (container._dragInitialized) return;
+            container._dragInitialized = true;
+
+            this._currentContainer = container;
+
+            // Bind handlers một lần duy nhất và lưu lại
+            this._boundHandlers = {
+                onDragStart: this.onDragStart.bind(this),
+                onDragStartTouch: this.onDragStartTouch.bind(this),
+                onDragMove: this.onDragMove.bind(this),
+                onDragMoveTouch: this.onDragMoveTouch.bind(this),
+                onDragEnd: this.onDragEnd.bind(this)
+            };
+
+            // Thêm lớp drag-handle vào container
+            container.classList.add('yt-sub-draggable');
+
+            // Thiết lập vị trí từ cài đặt
+            this.applySavedPosition(container);
+
+            // Thêm sự kiện cho chuột
+            container.addEventListener('mousedown', this._boundHandlers.onDragStart);
+            container.addEventListener('touchstart', this._boundHandlers.onDragStartTouch, { passive: false });
+
+            // Ngăn chặn sự kiện mặc định khi kéo
+            container.addEventListener('dragstart', (e) => e.preventDefault());
+
+            // Thêm style cho container khi kéo
+            container.style.cursor = 'move';
+            container.style.userSelect = 'none';
+        },
+
+        onDragStart(e) {
+            // Cho phép kéo cả khi click vào text (người dùng thường click vào text)
+            // Chỉ chặn nếu đang select text
+            if (window.getSelection()?.toString()) {
+                return;
+            }
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            const container = this._currentContainer || $(SELECTORS.subtitleContainer);
+            if (!container) return;
+
+            State.isDragging = true;
+
+            // Lưu vị trí bắt đầu
+            State.dragStartPos.x = e.clientX;
+            State.dragStartPos.y = e.clientY;
+
+            const rect = container.getBoundingClientRect();
+            State.containerStartPos.x = rect.left;
+            State.containerStartPos.y = rect.top;
+
+            // Thêm style khi đang kéo
+            container.style.transition = 'none';
+            container.style.opacity = '0.8';
+            container.style.zIndex = '9999';
+            container.classList.add('yt-sub-dragging');
+
+            // Thêm sự kiện cho toàn document - sử dụng handler đã bind
+            document.addEventListener('mousemove', this._boundHandlers.onDragMove);
+            document.addEventListener('mouseup', this._boundHandlers.onDragEnd);
+        },
+
+        onDragStartTouch(e) {
+            if (e.touches.length !== 1) return;
+
+            const container = this._currentContainer || $(SELECTORS.subtitleContainer);
+            if (!container) return;
+
+            // Cho phép kéo cả khi touch vào text
+            // Chỉ chặn nếu đang select text
+            if (window.getSelection()?.toString()) {
+                return;
+            }
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            State.isDragging = true;
+
+            // Lưu vị trí bắt đầu từ touch
+            State.dragStartPos.x = e.touches[0].clientX;
+            State.dragStartPos.y = e.touches[0].clientY;
+
+            const rect = container.getBoundingClientRect();
+            State.containerStartPos.x = rect.left;
+            State.containerStartPos.y = rect.top;
+
+            // Thêm style khi đang kéo
+            container.style.transition = 'none';
+            container.style.opacity = '0.8';
+            container.style.zIndex = '9999';
+            container.classList.add('yt-sub-dragging');
+
+            // Thêm sự kiện touch - sử dụng handler đã bind
+            document.addEventListener('touchmove', this._boundHandlers.onDragMoveTouch, { passive: false });
+            document.addEventListener('touchend', this._boundHandlers.onDragEnd);
+            document.addEventListener('touchcancel', this._boundHandlers.onDragEnd);
+        },
+
+        onDragMove(e) {
+            if (!State.isDragging) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            const container = $(SELECTORS.subtitleContainer);
+            if (!container) return;
+
+            // Tính toán vị trí mới
+            const deltaX = e.clientX - State.dragStartPos.x;
+            const deltaY = e.clientY - State.dragStartPos.y;
+
+            let newX = State.containerStartPos.x + deltaX;
+            let newY = State.containerStartPos.y + deltaY;
+
+            // Giới hạn trong phạm vi màn hình
+            const maxX = window.innerWidth - container.offsetWidth;
+            const maxY = window.innerHeight - container.offsetHeight;
+
+            newX = Math.max(0, Math.min(newX, maxX));
+            newY = Math.max(0, Math.min(newY, maxY));
+
+            // Xác định canh lề dựa trên vị trí
+            let alignment = 'left';
+            if (newX > maxX * 0.7) {
+                alignment = 'right';
+                container.style.right = (window.innerWidth - newX - container.offsetWidth) + 'px';
+                container.style.left = 'auto';
+            } else if (newX < maxX * 0.3) {
+                alignment = 'left';
+                container.style.left = newX + 'px';
+                container.style.right = 'auto';
+            } else {
+                alignment = 'center';
+                container.style.left = newX + 'px';
+                container.style.right = 'auto';
+            }
+
+            // Áp dụng vị trí mới
+            container.style.left = alignment === 'center' || alignment === 'left' ? newX + 'px' : 'auto';
+            container.style.right = alignment === 'right' ? (window.innerWidth - newX - container.offsetWidth) + 'px' : 'auto';
+            container.style.top = newY + 'px';
+            container.style.bottom = 'auto';
+
+            // Xóa các thuộc tính cũ
+            container.style.transform = 'none';
+
+            // Lưu vị trí tạm thời
+            State.currentDragPos = { x: newX, y: newY, alignment };
+        },
+
+        onDragMoveTouch(e) {
+            if (!State.isDragging || e.touches.length !== 1) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            const container = $(SELECTORS.subtitleContainer);
+            if (!container) return;
+
+            // Tính toán vị trí mới từ touch
+            const deltaX = e.touches[0].clientX - State.dragStartPos.x;
+            const deltaY = e.touches[0].clientY - State.dragStartPos.y;
+
+            let newX = State.containerStartPos.x + deltaX;
+            let newY = State.containerStartPos.y + deltaY;
+
+            // Giới hạn trong phạm vi màn hình
+            const maxX = window.innerWidth - container.offsetWidth;
+            const maxY = window.innerHeight - container.offsetHeight;
+
+            newX = Math.max(0, Math.min(newX, maxX));
+            newY = Math.max(0, Math.min(newY, maxY));
+
+            // Xác định canh lề dựa trên vị trí
+            let alignment = 'left';
+            if (newX > maxX * 0.7) {
+                alignment = 'right';
+                container.style.right = (window.innerWidth - newX - container.offsetWidth) + 'px';
+                container.style.left = 'auto';
+            } else if (newX < maxX * 0.3) {
+                alignment = 'left';
+                container.style.left = newX + 'px';
+                container.style.right = 'auto';
+            } else {
+                alignment = 'center';
+                container.style.left = newX + 'px';
+                container.style.right = 'auto';
+            }
+
+            // Áp dụng vị trí mới
+            container.style.left = alignment === 'center' || alignment === 'left' ? newX + 'px' : 'auto';
+            container.style.right = alignment === 'right' ? (window.innerWidth - newX - container.offsetWidth) + 'px' : 'auto';
+            container.style.top = newY + 'px';
+            container.style.bottom = 'auto';
+
+            // Xóa các thuộc tính cũ
+            container.style.transform = 'none';
+
+            // Lưu vị trí tạm thời
+            State.currentDragPos = { x: newX, y: newY, alignment };
+        },
+
+        onDragEnd(e) {
+            if (!State.isDragging) return;
+
+            // Chỉ preventDefault nếu event tồn tại và có method này
+            if (e && e.preventDefault) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            const container = this._currentContainer || $(SELECTORS.subtitleContainer);
+            if (container) {
+                // Xóa style kéo
+                container.style.transition = '';
+                container.style.opacity = '';
+                container.style.zIndex = '';
+                container.classList.remove('yt-sub-dragging');
+            }
+
+            // Lưu vị trí vào cài đặt
+            if (State.currentDragPos) {
+                const pos = State.currentDragPos;
+                Settings.saveContainerPosition(pos.x + 'px', pos.y + 'px', pos.alignment);
+            }
+
+            // Reset state
+            State.isDragging = false;
+            State.currentDragPos = null;
+
+            // Xóa sự kiện - sử dụng handler đã bind
+            if (this._boundHandlers) {
+                document.removeEventListener('mousemove', this._boundHandlers.onDragMove);
+                document.removeEventListener('mouseup', this._boundHandlers.onDragEnd);
+                document.removeEventListener('touchmove', this._boundHandlers.onDragMoveTouch);
+                document.removeEventListener('touchend', this._boundHandlers.onDragEnd);
+                document.removeEventListener('touchcancel', this._boundHandlers.onDragEnd);
+            }
+        },
+
+        applySavedPosition(container) {
+            if (!container) return;
+
+            const pos = Settings.get('containerPosition');
+            const alignment = Settings.get('containerAlignment');
+
+            if (pos && pos.x && pos.y) {
+                // Áp dụng vị trí đã lưu
+                if (alignment === 'right') {
+                    container.style.right = pos.x;
+                    container.style.left = 'auto';
+                } else if (alignment === 'center') {
+                    container.style.left = '50%';
+                    container.style.right = 'auto';
+                    container.style.transform = 'translateX(-50%)';
+                } else {
+                    container.style.left = pos.x;
+                    container.style.right = 'auto';
+                }
+
+                if (pos.y.includes('%')) {
+                    container.style.top = 'auto';
+                    container.style.bottom = pos.y;
+                } else {
+                    container.style.top = pos.y;
+                    container.style.bottom = 'auto';
+                }
+            } else {
+                // Vị trí mặc định
+                container.style.left = '5%';
+                container.style.bottom = '70px';
+                container.style.top = 'auto';
+                container.style.right = 'auto';
+            }
+        },
+
+        resetPosition(container) {
+            if (!container) return;
+
+            // Reset về vị trí mặc định
+            container.style.left = '5%';
+            container.style.bottom = '70px';
+            container.style.top = 'auto';
+            container.style.right = 'auto';
+            container.style.transform = 'none';
+
+            // Xóa vị trí đã lưu
+            Settings.saveContainerPosition('5%', '70px', 'left');
+        }
     };
 
     // ==================== STYLES ====================
@@ -136,37 +461,58 @@
                 #yt-bilingual-subtitles {
                     display: inline-flex !important;
                     flex-direction: column !important;
-                    align-items: center !important;
+                    align-items: flex-start !important;
                     visibility: visible !important; opacity: 1 !important;
-                    position: absolute !important;
-                    bottom: 70px !important;
-                    left: 50% !important;
-                    transform: translateX(-50%) !important;
-                    padding: 2px !important;
-                    background: rgba(8,8,8,0.85) !important; border-radius: 4px !important;
+                    position: fixed !important;
+                    padding: 8px 12px !important;
+                    background: rgba(8,8,8,0.85) !important; 
+                    border-radius: 6px !important;
+                    border: none !important;
                     max-width: 90% !important;
-                    text-align: center !important; z-index: 60 !important;
-                    pointer-events: none !important;
-                    gap: 2px !important;
+                    min-width: 200px !important;
+                    text-align: left !important; 
+                    z-index: 9998 !important;
+                    pointer-events: auto !important;
+                    gap: 4px !important;
+                    cursor: move !important;
+                    user-select: none !important;
+                    transition: opacity 0.2s, transform 0.2s !important;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+                    backdrop-filter: blur(4px) !important;
                 }
+                
+                /* Hiệu ứng khi hover */
+                #yt-bilingual-subtitles:hover {
+                    background: rgba(15,15,15,0.9) !important;
+                }
+                
+                /* Hiệu ứng khi đang kéo */
+                #yt-bilingual-subtitles.yt-sub-dragging {
+                    opacity: 0.8 !important;
+                    box-shadow: 0 6px 20px rgba(0,0,0,0.4) !important;
+                    z-index: 9999 !important;
+                }
+                
                 #yt-bilingual-subtitles .sub-original {
                     color: ${s.originalColor} !important;
                     font-size: ${s.fontSize}px !important;
                     text-shadow: 1px 1px 3px rgba(0,0,0,0.9) !important;
-                    white-space: nowrap !important;
-                    overflow: hidden !important;
-                    text-overflow: ellipsis !important;
+                    white-space: normal !important;
+                    word-wrap: break-word !important;
+                    overflow-wrap: break-word !important;
                     max-width: 100% !important;
+                    line-height: 1.3 !important;
                     ${hideOriginal ? 'display: none !important;' : ''}
                 }
                 #yt-bilingual-subtitles .sub-translated {
                     color: ${s.translatedColor} !important;
                     font-size: ${s.translatedFontSize}px !important;
                     text-shadow: 1px 1px 3px rgba(0,0,0,0.9) !important;
-                    white-space: nowrap !important;
-                    overflow: hidden !important;
-                    text-overflow: ellipsis !important;
+                    white-space: normal !important;
+                    word-wrap: break-word !important;
+                    overflow-wrap: break-word !important;
                     max-width: 100% !important;
+                    line-height: 1.3 !important;
                 }
 
                 /* Settings panel */
@@ -209,12 +555,27 @@
                     background: #fff; border-radius: 50%; top: 2px; left: 2px; transition: left 0.2s;
                 }
                 #yt-subtitle-settings .toggle.active::after { left: 22px; }
+                
+                /* Nút reset vị trí trong settings */
+                #yt-subtitle-settings .reset-position-btn {
+                    background: #555; color: #fff; border: none;
+                    border-radius: 4px; padding: 6px 12px;
+                    cursor: pointer; font-size: 13px;
+                    margin-top: 8px; width: 100%;
+                    transition: background 0.2s;
+                }
+                #yt-subtitle-settings .reset-position-btn:hover {
+                    background: #666;
+                }
             `;
         }
     };
 
     // ==================== TRANSLATION ====================
     const Translation = {
+        // Regex để phát hiện kết thúc câu
+        SENTENCE_END: /[.!?;:。！？；：]\s*$/,
+
         async translate(text) {
             if (!text?.trim()) return '';
             const key = text.trim();
@@ -239,19 +600,61 @@
             }
         },
 
+        isCompleteSentence(text) {
+            return this.SENTENCE_END.test(text.trim());
+        },
+
         async process() {
             const segments = $$(SELECTORS.captionSegment);
-            if (!segments.length) return this.removeContainer();
+            if (!segments.length) {
+                // Reset buffer khi không có caption
+                State.lastRawText = '';
+                State.pendingText = '';
+                return this.removeContainer();
+            }
 
-            const allText = Array.from(segments).map(s => s.textContent.trim()).filter(Boolean).join(' ');
-            if (!allText) return this.removeContainer();
+            const currentText = Array.from(segments)
+                .map(s => s.textContent.trim())
+                .filter(Boolean)
+                .join(' ');
+
+            if (!currentText) return this.removeContainer();
+
+            if (currentText === State.lastRawText) return;
+
+            State.lastRawText = currentText;
+            State.pendingText = currentText;
+            clearTimeout(State.sentenceTimeout);
+
+            const shouldTranslateNow =
+                this.isCompleteSentence(currentText) ||
+                (currentText.length >= CONFIG.MIN_TEXT_LENGTH &&
+                    currentText !== State.lastStableText &&
+                    State.cache.has(currentText.trim()));
+
+            if (shouldTranslateNow) {
+                await this.translateAndShow(currentText);
+            } else {
+                State.sentenceTimeout = setTimeout(async () => {
+                    if (State.pendingText === currentText &&
+                        currentText !== State.lastStableText &&
+                        currentText.length >= CONFIG.MIN_TEXT_LENGTH) {
+                        await this.translateAndShow(currentText);
+                    }
+                }, CONFIG.SENTENCE_STABLE_MS);
+            }
+        },
+
+        async translateAndShow(text) {
+            if (!text || text === State.lastStableText) return;
 
             const container = $(SELECTORS.subtitleContainer);
-            if (container?.dataset.source === allText) return;
+            if (container?.dataset.source === text) return;
 
-            const translated = await this.translate(allText);
-            if (translated && translated !== allText) {
-                this.updateContainer(allText, translated);
+            const translated = await this.translate(text);
+            if (translated && translated !== text) {
+                State.lastStableText = text;
+                this.updateContainer(text, translated);
             }
         },
 
@@ -267,24 +670,27 @@
                     <div class="sub-original"></div>
                     <div class="sub-translated"></div>
                 `);
-            }
-
-            if (container.parentElement !== player) {
-                player.appendChild(container);
-                player.classList.add('yt-translating');
+                document.body.appendChild(container);
+                DragManager.init(container);
             }
 
             container.querySelector('.sub-original').textContent = original;
             container.querySelector('.sub-translated').textContent = translated;
             container.dataset.source = original;
+            player.classList.add('yt-translating');
         },
 
         removeContainer() {
             const container = $(SELECTORS.subtitleContainer);
             if (container) {
-                container.parentElement?.classList.remove('yt-translating');
                 container.remove();
             }
+
+            // Reset stable text khi remove container
+            State.lastStableText = '';
+
+            // Xóa class khỏi tất cả players
+            document.querySelectorAll('.yt-translating').forEach(el => el.classList.remove('yt-translating'));
         },
 
         debouncedProcess() {
@@ -356,8 +762,6 @@
             } else {
                 Observer.stop();
                 Translation.removeContainer();
-                // Force xóa class trên tất cả players
-                document.querySelectorAll('.yt-translating').forEach(el => el.classList.remove('yt-translating'));
             }
         },
 
@@ -387,6 +791,7 @@
                     </select>
                 </div>
                 <div class="setting-row"><label>Hiện gốc</label><div class="toggle ${s.showOriginal ? 'active' : ''}" id="s-show-orig"></div></div>
+                <button class="reset-position-btn" id="s-reset-pos">Đặt lại vị trí container</button>
             `);
             document.body.appendChild(panel);
 
@@ -407,6 +812,11 @@
             bind('#s-show-orig', 'onclick', (e) => {
                 Settings.set('showOriginal', !Settings.get('showOriginal'));
                 e.target.classList.toggle('active', Settings.get('showOriginal'));
+            });
+            bind('#s-reset-pos', 'onclick', () => {
+                const container = $(SELECTORS.subtitleContainer);
+                DragManager.resetPosition(container);
+                panel.remove();
             });
 
             // Close on outside click
@@ -454,6 +864,23 @@
         if (e.key.toLowerCase() === 't' && !e.ctrlKey && !e.altKey && !e.metaKey && $(SELECTORS.video)) {
             e.preventDefault();
             UI.toggleTranslation();
+        }
+    });
+
+    // Xử lý resize window để cập nhật vị trí container
+    window.addEventListener('resize', () => {
+        const container = $(SELECTORS.subtitleContainer);
+        if (container) {
+            // Đảm bảo container không ra ngoài màn hình khi resize
+            const rect = container.getBoundingClientRect();
+            if (rect.left < 0) container.style.left = '0px';
+            if (rect.top < 0) container.style.top = '0px';
+            if (rect.right > window.innerWidth) {
+                container.style.left = (window.innerWidth - container.offsetWidth) + 'px';
+            }
+            if (rect.bottom > window.innerHeight) {
+                container.style.top = (window.innerHeight - container.offsetHeight) + 'px';
+            }
         }
     });
 
