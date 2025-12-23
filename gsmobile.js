@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Mobile Gestures
+// @name         M-Gestures
 // @namespace    mobile-gestures
-// @version      1.1.1
+// @version      1.0.1
 // @description  Long-press mở link, Double-tap đóng tab, Edge swipe scroll
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
@@ -158,12 +158,18 @@ const initEvents = () => {
         }
 
         // Double tap - only if enabled AND not on interactive element
+        // Requires previous tap to be completed (ended:true) to prevent synthetic events
         if (CFG.dblTap.enabled && !isInteractive(e.target)) {
             const last = State.dblTap.last;
-            if (last && now - last.time < CFG.dblTap.ms && dist(t.clientX, t.clientY, last.x, last.y) < TOL.tap) {
+            const timeSinceLast = last ? now - last.time : Infinity;
+            // Must have: ended, within ms window, but at least 100ms gap (prevents synthetic events)
+            if (last && last.ended && timeSinceLast >= 100 && timeSinceLast < CFG.dblTap.ms && dist(t.clientX, t.clientY, last.x, last.y) < TOL.tap) {
                 e.preventDefault(); e.stopPropagation(); State.dblTap.last = null; closeTab(); return;
             }
-            State.dblTap.last = { time: now, x: t.clientX, y: t.clientY };
+            // Only save new tap if this isn't a duplicate event (at least 50ms since last touchstart)
+            if (!last || timeSinceLast > 50) {
+                State.dblTap.last = { time: now, x: t.clientX, y: t.clientY, ended: false };
+            }
         }
 
         // Long press
@@ -180,6 +186,13 @@ const initEvents = () => {
         if (State.lp.active && e.touches.length === 1) {
             const t = e.touches[0];
             if (dist(t.clientX, t.clientY, State.lp.x, State.lp.y) > TOL.move) cancelLP();
+        }
+        // Reset double-tap nếu di chuyển quá xa
+        if (State.dblTap.last && e.touches.length === 1) {
+            const t = e.touches[0];
+            if (dist(t.clientX, t.clientY, State.dblTap.last.x, State.dblTap.last.y) > TOL.tap) {
+                State.dblTap.last = null;
+            }
         }
         if (!State.edge.active || e.touches.length !== 1) { State.edge.active = false; return; }
 
@@ -203,6 +216,17 @@ const initEvents = () => {
             startMomentum(State.edge.velocity);
         }
         State.edge.active = false;
+        // Mark tap as completed and auto-expire after timeout
+        if (State.dblTap.last && !State.dblTap.last.ended) {
+            State.dblTap.last.ended = true;
+            State.dblTap.last.time = Date.now(); // Update time to when tap ended
+            const savedTime = State.dblTap.last.time;
+            setTimeout(() => {
+                if (State.dblTap.last && State.dblTap.last.time === savedTime) {
+                    State.dblTap.last = null;
+                }
+            }, CFG.dblTap.ms + 50);
+        }
     }, true);
 
     window.addEventListener('touchcancel', () => { cancelLP(); State.edge.active = false; }, true);
