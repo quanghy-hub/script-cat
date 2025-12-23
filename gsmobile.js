@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         M-Gestures
+// @name         MGesture
 // @namespace    mobile-gestures
-// @version      1.0.1
+// @version      1.2.0
 // @description  Long-press mở link, Double-tap đóng tab, Edge swipe scroll
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
