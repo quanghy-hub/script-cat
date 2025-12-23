@@ -1,16 +1,13 @@
 // ==UserScript==
-// @name         YTSub
-// @namespace    yt-bilingual-subs
-// @version      2.7.0
-...
+// @name         YSub
+// @namespace    yt
+// @version      2.8.0
 // @description  Bilingual Subtitles with Settings
 // @match        https://www.youtube.com/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/yt.js
 // @downloadURL  https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/yt.js
 // @exclude      /^https?://\S+\.(txt|png|jpg|jpeg|gif|xml|svg|manifest|log|ini|webp|webm)[^\/]*$/
 // @exclude      /^https?://\S+_live_chat*$/
-// @grant        GM_getValue
-// @grant        GM_setValue
 // @connect      translate.googleapis.com
 // @inject-into  page
 // @allFrames    true
@@ -30,11 +27,12 @@
     };
 
     const SELECTORS = {
+        player: '#movie_player, .html5-video-player',
         controls: '.ytp-right-controls',
         translateBtn: '.ytp-translate-button',
         settingsBtn: '.ytp-subtitle-settings-button',
         settingsPanel: '#yt-subtitle-settings',
-        translationContainer: '#yt-translation-container',
+        subtitleContainer: '#yt-bilingual-subtitles',
         captionSegment: '.ytp-caption-segment',
         video: 'video'
     };
@@ -128,37 +126,47 @@
                 .ytp-translate-button.active { opacity: 1; color: #1c87eb; }
                 .ytp-translate-button.active svg { fill: #189aeb; }
 
-                /* Caption containers */
-                .ytp-caption-window-container, .ytp-caption-window-bottom,
-                .ytp-caption-window-bottom-inner, .caption-window {
-                    max-height: none !important; overflow: visible !important;
+                /* Hide YouTube captions when translating */
+                .yt-translating .ytp-caption-window-container {
+                    opacity: 0 !important;
+                    pointer-events: none !important;
                 }
 
-                /* Original subtitles */
-                .ytp-caption-segment {
-                    font-size: ${s.fontSize}px !important;
+                /* Unified bilingual subtitle container */
+                #yt-bilingual-subtitles {
+                    display: inline-flex !important;
+                    flex-direction: column !important;
+                    align-items: center !important;
+                    visibility: visible !important; opacity: 1 !important;
+                    position: absolute !important;
+                    bottom: 70px !important;
+                    left: 50% !important;
+                    transform: translateX(-50%) !important;
+                    padding: 2px !important;
+                    background: rgba(8,8,8,0.85) !important; border-radius: 4px !important;
+                    max-width: 90% !important;
+                    text-align: center !important; z-index: 60 !important;
+                    pointer-events: none !important;
+                    gap: 2px !important;
+                }
+                #yt-bilingual-subtitles .sub-original {
                     color: ${s.originalColor} !important;
-                    white-space: pre-wrap !important; word-wrap: break-word !important;
-                    overflow: visible !important; display: inline !important;
-                    line-height: 1.4 !important;
+                    font-size: ${s.fontSize}px !important;
+                    text-shadow: 1px 1px 3px rgba(0,0,0,0.9) !important;
+                    white-space: nowrap !important;
+                    overflow: hidden !important;
+                    text-overflow: ellipsis !important;
+                    max-width: 100% !important;
                     ${hideOriginal ? 'display: none !important;' : ''}
                 }
-                .caption-visual-line {
-                    white-space: pre-wrap !important; word-wrap: break-word !important;
-                    overflow: visible !important;
-                }
-
-                /* Translation container */
-                #yt-translation-container {
-                    display: block !important; visibility: visible !important; opacity: 1 !important;
+                #yt-bilingual-subtitles .sub-translated {
                     color: ${s.translatedColor} !important;
                     font-size: ${s.translatedFontSize}px !important;
-                    text-shadow: 1px 1px 2px rgba(0,0,0,0.8) !important;
-                    margin-top: 8px !important; padding: 6px 12px !important;
-                    background: rgba(8,8,8,0.75) !important; border-radius: 4px !important;
-                    white-space: pre-wrap !important; word-wrap: break-word !important;
-                    line-height: 1.5 !important; max-width: 85vw !important;
-                    text-align: center !important; position: relative !important; z-index: 999 !important;
+                    text-shadow: 1px 1px 3px rgba(0,0,0,0.9) !important;
+                    white-space: nowrap !important;
+                    overflow: hidden !important;
+                    text-overflow: ellipsis !important;
+                    max-width: 100% !important;
                 }
 
                 /* Settings panel */
@@ -238,38 +246,45 @@
             const allText = Array.from(segments).map(s => s.textContent.trim()).filter(Boolean).join(' ');
             if (!allText) return this.removeContainer();
 
-            const container = $(SELECTORS.translationContainer);
+            const container = $(SELECTORS.subtitleContainer);
             if (container?.dataset.source === allText) return;
 
             const translated = await this.translate(allText);
             if (translated && translated !== allText) {
-                this.updateContainer(translated, allText);
+                this.updateContainer(allText, translated);
             }
         },
 
-        updateContainer(text, source) {
-            const segment = $(SELECTORS.captionSegment);
-            if (!segment) return;
+        updateContainer(original, translated) {
+            const player = $(SELECTORS.player);
+            if (!player) return;
 
-            const captionWindow = segment.closest('.ytp-caption-window-bottom')
-                || segment.closest('.caption-window')
-                || segment.closest('.ytp-caption-window-container')
-                || segment.parentElement?.parentElement?.parentElement;
-
-            if (!captionWindow) return;
-
-            let container = $(SELECTORS.translationContainer);
+            let container = $(SELECTORS.subtitleContainer);
             if (!container) {
                 container = document.createElement('div');
-                container.id = 'yt-translation-container';
+                container.id = 'yt-bilingual-subtitles';
+                container.innerHTML = safeHTML(`
+                    <div class="sub-original"></div>
+                    <div class="sub-translated"></div>
+                `);
             }
-            captionWindow.appendChild(container);
-            container.textContent = text;
-            container.dataset.source = source;
+
+            if (container.parentElement !== player) {
+                player.appendChild(container);
+                player.classList.add('yt-translating');
+            }
+
+            container.querySelector('.sub-original').textContent = original;
+            container.querySelector('.sub-translated').textContent = translated;
+            container.dataset.source = original;
         },
 
         removeContainer() {
-            $(SELECTORS.translationContainer)?.remove();
+            const container = $(SELECTORS.subtitleContainer);
+            if (container) {
+                container.parentElement?.classList.remove('yt-translating');
+                container.remove();
+            }
         },
 
         debouncedProcess() {
@@ -328,6 +343,7 @@
         toggleTranslation() {
             State.translateEnabled = !State.translateEnabled;
             const btn = $(SELECTORS.translateBtn);
+
             if (btn) {
                 btn.classList.toggle('active', State.translateEnabled);
                 btn.innerHTML = safeHTML(State.translateEnabled ? ICONS.translateActive : ICONS.translate);
@@ -340,6 +356,8 @@
             } else {
                 Observer.stop();
                 Translation.removeContainer();
+                // Force xóa class trên tất cả players
+                document.querySelectorAll('.yt-translating').forEach(el => el.classList.remove('yt-translating'));
             }
         },
 
@@ -439,18 +457,37 @@
         }
     });
 
-    // Wait for YouTube player controls
-    const pageObserver = new MutationObserver(() => {
+    // Wait for YouTube player controls with retry
+    let initRetries = 0;
+    const maxRetries = 20;
+
+    function tryInit() {
         if ($(SELECTORS.controls)) {
             init();
+            return true;
+        }
+        return false;
+    }
+
+    const pageObserver = new MutationObserver(() => {
+        if (tryInit()) {
             pageObserver.disconnect();
         }
     });
     pageObserver.observe(document.documentElement, { childList: true, subtree: true });
 
+    // Retry mechanism for Edge and slow-loading pages
+    const retryInit = () => {
+        if (initRetries >= maxRetries) return;
+        if (!tryInit()) {
+            initRetries++;
+            setTimeout(retryInit, 500);
+        }
+    };
+
     if (document.readyState !== 'loading') {
-        setTimeout(init, 0);
+        setTimeout(retryInit, 100);
     } else {
-        window.addEventListener('DOMContentLoaded', init, { once: true });
+        window.addEventListener('DOMContentLoaded', () => setTimeout(retryInit, 100), { once: true });
     }
 })();
