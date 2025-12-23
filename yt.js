@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YSub
 // @namespace    yt
-// @version      2.9.0
+// @version      2.9.1
 // @description  Bilingual Subtitles with Settings and Drag Support
 // @match        https://www.youtube.com/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/yt.js
@@ -64,7 +64,7 @@
             fontSize: 16,
             translatedFontSize: 16,
             originalColor: '#ffffff',
-            translatedColor: '#ffeb3b',
+            translatedColor: '#0e8cecff',
             displayMode: 'compact',
             showOriginal: true,
             containerPosition: { x: '5%', y: '70px' }, // Vị trí container
@@ -452,9 +452,12 @@
                 .ytp-translate-button.active svg { fill: #189aeb; }
 
                 /* Hide YouTube captions when translating */
-                .yt-translating .ytp-caption-window-container {
+                .yt-translating .ytp-caption-window-container,
+                .yt-translating .caption-window {
                     opacity: 0 !important;
+                    visibility: hidden !important;
                     pointer-events: none !important;
+                    display: none !important;
                 }
 
                 /* Unified bilingual subtitle container */
@@ -680,7 +683,7 @@
             player.classList.add('yt-translating');
         },
 
-        removeContainer() {
+        removeContainer(forceRemoveClass = false) {
             const container = $(SELECTORS.subtitleContainer);
             if (container) {
                 container.remove();
@@ -689,8 +692,10 @@
             // Reset stable text khi remove container
             State.lastStableText = '';
 
-            // Xóa class khỏi tất cả players
-            document.querySelectorAll('.yt-translating').forEach(el => el.classList.remove('yt-translating'));
+            // Chỉ xóa class khi tắt dịch hoàn toàn, không xóa khi caption tạm thời mất
+            if (forceRemoveClass) {
+                document.querySelectorAll('.yt-translating').forEach(el => el.classList.remove('yt-translating'));
+            }
         },
 
         debouncedProcess() {
@@ -761,7 +766,7 @@
                 Translation.debouncedProcess();
             } else {
                 Observer.stop();
-                Translation.removeContainer();
+                Translation.removeContainer(true); // Force remove class khi tắt dịch
             }
         },
 
