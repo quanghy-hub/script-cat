@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Search
 // @namespace    qsb.search.bubble
-// @version      2.1.0
+// @version      2.2.0
 // @description  Quick Search Bubble - Compact Edition
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
