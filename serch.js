@@ -61,7 +61,7 @@
     };
 
     const fname = u => { try { const n = new URL(u, location.href).pathname.split('/').pop()?.split('?')[0] || 'image'; return /\.(png|jpe?g|webp|gif|bmp|svg|avif)$/i.test(n) ? n : n + '.jpg'; } catch { return 'image.jpg'; } };
-    const getImg = t => t.closest?.('.qsb') ? null : t.tagName === 'IMG' ? t : t.closest('picture')?.querySelector('img');
+    const getImg = t => !t?.tagName || t.closest?.('.qsb') ? null : t.tagName === 'IMG' ? t : t.closest?.('picture')?.querySelector('img');
 
     // === STYLES ===
     GM_addStyle(`
