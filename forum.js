@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Forum
 // @namespace    forum
-// @version      1.1.0
+// @version      1.3.0
 // @description  Chia 2 cột Masonry + dàn rộng full màn hình
 // @match        *://*/*
-// @run-at       document-idle
+// @run-at       document-start
 // @noframes
 // @grant        GM_registerMenuCommand
 // @grant        GM_getValue
@@ -15,9 +15,10 @@
 'use strict';
 
 const HOST = location.host;
-const STORAGE_KEY = 'forum_split_v5';
-const DEFAULTS = { enabled: false, wide: true, minWidth: 1000, gap: 1 };
+const STORAGE_KEY = 'forum_split_v1.3.0';
+const DEFAULTS = { enabled: false, wide: true, minWidth: 1000, gap: 1, fadeTime: 150, initDelay: 100 };
 
+// ===== CONFIG =====
 const Config = {
     _cache: null,
     get() {
@@ -29,7 +30,8 @@ const Config = {
         return this._cache;
     },
     save(cfg) {
-        cfg._hosts[HOST] = { enabled: cfg.enabled, wide: cfg.wide, minWidth: cfg.minWidth, gap: cfg.gap };
+        const { enabled, wide, minWidth, gap, fadeTime, initDelay } = cfg;
+        cfg._hosts[HOST] = { enabled, wide, minWidth, gap, fadeTime, initDelay };
         GM_setValue(STORAGE_KEY, JSON.stringify({ hosts: cfg._hosts }));
         this._cache = cfg;
     }
@@ -38,34 +40,41 @@ const Config = {
 let CFG = Config.get();
 let activeWrappers = [], styleEl = null, modal = null, observer = null;
 
+// ===== EARLY HIDE =====
+if (CFG.enabled) {
+    const s = document.createElement('style');
+    s.id = 'fs-early';
+    s.textContent = `html.fs-loading body{opacity:0!important}html.fs-ready body{opacity:1;transition:opacity ${CFG.fadeTime}ms ease-out}`;
+    (document.head || document.documentElement).appendChild(s);
+    document.documentElement.classList.add('fs-loading');
+}
+
+// ===== CSS =====
+const CSS = `
+html.fs-wide .p-body-inner,html.fs-wide .p-pageWrapper,html.fs-wide .pageWidth,
+html.fs-wide #content,html.fs-wide .container,html.fs-wide .wrap,html.fs-wide main{max-width:100%!important;width:100%!important;margin-inline:auto!important}
+html.fs-active .p-body-sidebar,html.fs-active aside.p-body-sidebar,html.fs-active .block--category-boxes{display:none!important}
+html.fs-active .p-body-inner{max-width:100%!important;width:100%!important;padding:0!important}
+html.fs-active .p-body-main,html.fs-active .p-body-main--withSidebar{display:block!important}
+html.fs-active .p-body-content{width:100%!important;max-width:100%!important}
+.fs-wrapper{display:flex!important;gap:var(--fs-gap,1px);align-items:flex-start}
+.fs-column{flex:1;min-width:0;display:flex;flex-direction:column;gap:var(--fs-gap,1px)}
+.fs-column>*{margin:0!important}
+.fs-wrapper img,.fs-wrapper video,.fs-wrapper iframe{max-width:100%!important;height:auto!important}
+.fs-original-hidden{display:none!important}`;
+
+const SELECTORS = [
+    { c: '.block-body.js-replyNewMessageContainer', i: 'article.message--post, article.message' },
+    { c: '.structItemContainer', i: '.structItem--thread, .structItem' }
+];
+
+// ===== HELPERS =====
 const toast = msg => {
     let t = document.getElementById('fs-toast');
     if (!t) { t = document.createElement('div'); t.id = 'fs-toast'; t.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#1a1a1ae6;color:#fff;padding:10px 20px;border-radius:20px;font:14px/1.4 system-ui;z-index:2147483647;pointer-events:none;opacity:0;transition:opacity .2s'; document.body.appendChild(t); }
     t.textContent = msg; t.style.opacity = '1';
     clearTimeout(t._timer); t._timer = setTimeout(() => t.style.opacity = '0', 2000);
 };
-
-// ===== CSS =====
-const CSS = `
-/* Wide Mode - Full 100% */
-html.fs-wide .p-body-inner, html.fs-wide .p-pageWrapper, html.fs-wide .pageWidth,
-html.fs-wide #content, html.fs-wide .container, html.fs-wide .wrap, html.fs-wide main {
-    max-width: 100% !important; width: 100% !important; margin-inline: auto !important;
-}
-
-/* Ẩn sidebar + mở rộng */
-html.fs-active .p-body-sidebar, html.fs-active aside.p-body-sidebar, html.fs-active .block--category-boxes { display: none !important; }
-html.fs-active .p-body-inner { max-width: 100% !important; width: 100% !important; padding: 0 !important; }
-html.fs-active .p-body-main, html.fs-active .p-body-main--withSidebar { display: block !important; }
-html.fs-active .p-body-content { width: 100% !important; max-width: 100% !important; }
-
-/* Masonry */
-.fs-wrapper { display: flex !important; gap: var(--fs-gap, 1px); align-items: flex-start; }
-.fs-column { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--fs-gap, 1px); }
-.fs-column > * { margin: 0 !important; }
-.fs-wrapper img, .fs-wrapper video, .fs-wrapper iframe { max-width: 100% !important; height: auto !important; }
-.fs-original-hidden { display: none !important; }
-`;
 
 const injectStyles = () => {
     if (styleEl) return;
@@ -75,12 +84,12 @@ const injectStyles = () => {
     document.head.appendChild(styleEl);
 };
 
-// ===== MASONRY =====
-const SELECTORS = [
-    { c: '.block-body.js-replyNewMessageContainer', i: 'article.message--post, article.message' },
-    { c: '.structItemContainer', i: '.structItem--thread, .structItem' }
-];
+const showContent = () => {
+    document.documentElement.classList.remove('fs-loading');
+    document.documentElement.classList.add('fs-ready');
+};
 
+// ===== MASONRY =====
 const createMasonry = (container, itemSelector) => {
     const items = Array.from(container.querySelectorAll(`:scope > ${itemSelector}`));
     if (items.length < 3) return null;
@@ -89,10 +98,8 @@ const createMasonry = (container, itemSelector) => {
     wrapper.className = 'fs-wrapper';
     wrapper.style.setProperty('--fs-gap', `${CFG.gap}px`);
 
-    const left = document.createElement('div');
-    const right = document.createElement('div');
-    left.className = 'fs-column';
-    right.className = 'fs-column';
+    const left = document.createElement('div'), right = document.createElement('div');
+    left.className = right.className = 'fs-column';
     wrapper.append(left, right);
 
     container.parentNode.insertBefore(wrapper, container);
@@ -128,7 +135,7 @@ const removeMasonry = () => {
 };
 
 // ===== LOGIC =====
-const shouldActivate = () => CFG.enabled && window.innerWidth > window.innerHeight && window.innerWidth >= CFG.minWidth;
+const shouldActivate = () => CFG.enabled && innerWidth > innerHeight && innerWidth >= CFG.minWidth;
 const update = () => shouldActivate() ? applyMasonry() : removeMasonry();
 const refresh = () => { removeMasonry(); if (shouldActivate()) setTimeout(applyMasonry, 100); };
 const toggle = () => { CFG.enabled = !CFG.enabled; Config.save(CFG); update(); toast(CFG.enabled ? '📐 BẬT' : '📐 TẮT'); };
@@ -170,21 +177,24 @@ input:checked+.fs-slider:before{transform:translateX(18px)}
 <div class="fs-group">
 <div class="fs-row"><span class="fs-label">Min Width</span><input id="fs-minw" type="number" class="fs-input" step="100">px</div>
 <div class="fs-row"><span class="fs-label">Gap</span><input id="fs-gap" type="number" class="fs-input" min="0" max="20">px</div>
+<div class="fs-row"><span class="fs-label">Fade Time</span><input id="fs-fade" type="number" class="fs-input" min="0" max="500">ms</div>
+<div class="fs-row"><span class="fs-label">Init Delay</span><input id="fs-delay" type="number" class="fs-input" min="0" max="500">ms</div>
 </div>
 <div class="fs-actions"><button class="fs-btn" id="fs-refresh">🔄</button><button class="fs-btn" id="fs-close">Đóng</button><button class="fs-btn primary" id="fs-save">Lưu</button></div>
 </div>`;
     document.body.appendChild(div);
     const $ = id => div.querySelector('#' + id);
-    const close = () => div.classList.remove('open');
-    $('fs-close').onclick = close;
+    $('fs-close').onclick = () => div.classList.remove('open');
     $('fs-refresh').onclick = () => { refresh(); toast('🔄'); };
-    div.onclick = e => { if (e.target === div) close(); };
+    div.onclick = e => { if (e.target === div) div.classList.remove('open'); };
     $('fs-save').onclick = () => {
         CFG.enabled = $('fs-en').checked;
         CFG.wide = $('fs-wide').checked;
-        CFG.minWidth = +$('fs-minw').value || 1000;
+        CFG.minWidth = Math.max(0, +$('fs-minw').value || 1000);
         CFG.gap = Math.max(0, Math.min(20, +$('fs-gap').value || 1));
-        Config.save(CFG); refresh(); close(); toast('✓');
+        CFG.fadeTime = Math.max(0, Math.min(500, +$('fs-fade').value || 150));
+        CFG.initDelay = Math.max(0, Math.min(500, +$('fs-delay').value || 100));
+        Config.save(CFG); refresh(); div.classList.remove('open'); toast('✓');
     };
     return div;
 };
@@ -196,6 +206,8 @@ const openSettings = () => {
     $('fs-wide').checked = CFG.wide;
     $('fs-minw').value = CFG.minWidth;
     $('fs-gap').value = CFG.gap;
+    $('fs-fade').value = CFG.fadeTime;
+    $('fs-delay').value = CFG.initDelay;
     requestAnimationFrame(() => modal.classList.add('open'));
 };
 
@@ -204,11 +216,12 @@ const init = () => {
     injectStyles();
     setTimeout(() => {
         update();
+        showContent();
         observer = new MutationObserver(() => { if (shouldActivate()) { clearTimeout(observer._t); observer._t = setTimeout(applyMasonry, 300); } });
         observer.observe(document.body, { childList: true, subtree: true });
-    }, 500);
-    let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(update, 200); });
-    window.addEventListener('orientationchange', () => setTimeout(update, 300));
+    }, CFG.initDelay);
+    let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(update, 200); });
+    addEventListener('orientationchange', () => setTimeout(update, 300));
     document.addEventListener('keydown', e => { if (e.altKey && e.shiftKey && e.code === 'KeyS') { e.preventDefault(); openSettings(); } });
     if (typeof GM_registerMenuCommand !== 'undefined') {
         GM_registerMenuCommand('📐 Cài đặt (Alt+Shift+S)', openSettings);
