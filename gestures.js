@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         Gestures
 // @namespace    unified-gestures
-// @version      4.0.0
+// @version      4.1.0
 // @description  Long-press/Right-click mở link, Double-tap đóng tab, Edge swipe scroll, Pager
 // @match        *://*/*
+// @exclude      *://mail.google.com/*
 // @run-at       document-start
+// @noframes
 // @grant        GM_registerMenuCommand
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -56,9 +58,9 @@ let CFG = Config.get();
 
 /* STATE & HELPERS */
 const State = {
-    suppressUntil: 0, lpFired: false,
+    suppressUntil: 0, lpFired: false, rcHandled: false,
     lp: { timer: null, active: false, x: 0, y: 0 },
-    dblRight: { lastTime: 0, x: 0, y: 0 },
+    dblRight: { lastTime: 0, x: 0, y: 0, timer: null },
     dblTap: { last: null },
     edge: { active: false, lastY: 0 }
 };
@@ -258,21 +260,45 @@ const initEvents = () => {
     ['pointerup', 'pointercancel'].forEach(evt => window.addEventListener(evt, cancelLP, true));
     window.addEventListener('click', e => { if (State.lpFired) { e.preventDefault(); e.stopPropagation(); State.lpFired = false; } }, true);
 
-    // Double Right Click
+    // Double Right Click - chỉ xử lý vùng trống
+    const pageLoadTime = Date.now();
+    let dblRightLastEvent = null;
+
     window.addEventListener('mousedown', e => {
+        State.rcHandled = false;
         if (e.button !== 2 || isEditable(e.target)) return;
-        if (CFG.rclick.enabled && getValidLink(e)) return;
-        const now = Date.now(), s = State.dblRight;
-        if (now - s.lastTime < CFG.dblRightMs && dist(e.clientX, e.clientY, s.x, s.y) < TOL.move) {
-            e.preventDefault(); e.stopPropagation(); s.lastTime = 0; closeTab();
-        } else { s.lastTime = now; s.x = e.clientX; s.y = e.clientY; }
+
+        const link = getValidLink(e);
+        if (link) { dblRightLastEvent = null; return; }
+
+        const now = Date.now();
+        if (now - pageLoadTime < 1000) return;
+
+        clearTimeout(State.dblRight.timer);
+
+        if (dblRightLastEvent &&
+            now - dblRightLastEvent.time < CFG.dblRightMs &&
+            dist(e.clientX, e.clientY, dblRightLastEvent.x, dblRightLastEvent.y) < TOL.move) {
+            e.preventDefault(); e.stopPropagation();
+            dblRightLastEvent = null;
+            State.rcHandled = true;
+            closeTab();
+        } else {
+            dblRightLastEvent = { time: now, x: e.clientX, y: e.clientY };
+            State.dblRight.timer = setTimeout(() => { dblRightLastEvent = null; }, CFG.dblRightMs + 100);
+        }
     }, true);
 
     // Right Click Open Link
     window.addEventListener('contextmenu', e => {
-        if (guard(e) || !CFG.rclick.enabled || e.button !== 2) return;
+        if (State.rcHandled || guard(e)) { e.preventDefault(); e.stopPropagation(); return; }
+        if (!CFG.rclick.enabled) return;
         const link = getValidLink(e);
-        if (link) { e.preventDefault(); e.stopPropagation(); openTab(link.href, CFG.rclick.mode); }
+        if (link) {
+            e.preventDefault(); e.stopPropagation();
+            State.rcHandled = true;
+            openTab(link.href, CFG.rclick.mode);
+        }
     }, true);
 
     // Touch
