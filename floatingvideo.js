@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Floating
 // @namespace    http://tampermonkey.net/
-// @version      5.9
+// @version      5.9.1
 // @description  Floating video player optimized for mobile with video rotation
 // @author       Claude
 // @match        *://*/*
@@ -200,9 +200,8 @@
         .fvp-btn:active, .fvp-btn:hover { 
             background: rgba(255,255,255,0.2); transform: scale(0.95); color: #fff; 
         }
-        #fvp-fit, #fvp-zoom, #fvp-full, #fvp-rotate, #fvp-mini { font-size: 16px; }
+        #fvp-fit, #fvp-zoom, #fvp-full, #fvp-rotate { font-size: 16px; }
         #fvp-prev, #fvp-next { min-width: 28px; min-height: 28px; font-size: 16px; padding: 2px; }
-        #fvp-mini { display: none; }
 
         /* Resize Handles */
         .fvp-resize-handle { position: absolute; z-index: 100; touch-action: none; }
@@ -230,8 +229,6 @@
             border-radius: 0 !important;
         }
         #fvp-container:fullscreen #fvp-wrapper { width: 100% !important; height: 100% !important; }
-        #fvp-container:fullscreen #fvp-mini { display: flex; }
-        #fvp-container:fullscreen #fvp-full { display: none; }
 
         /* Responsive */
         @media (max-width: 480px) {
@@ -246,8 +243,7 @@
         }
         @media (max-width: 360px) {
             .fvp-control-row { gap: 2px; }
-            .fvp-btn { min-width: 26px; min-height: 26px; font-size: 14px; }
-            #fvp-fit, #fvp-zoom, #fvp-full, #fvp-rotate { font-size: 14px; }
+            .fvp-btn, #fvp-fit, #fvp-zoom, #fvp-full, #fvp-rotate { min-width: 26px; min-height: 26px; font-size: 14px; }
             .fvp-volume-slider { width: 35px; }
             #fvp-prev, #fvp-next { min-width: 24px; min-height: 24px; font-size: 13px; }
         }
@@ -266,6 +262,7 @@
     const getCoord = e => { const t = e.touches?.[0] || e.changedTouches?.[0] || e; return { x: t.clientX, y: t.clientY }; };
     const formatTime = s => `${Math.floor(s / 60)}:${(Math.floor(s) % 60).toString().padStart(2, '0')}`;
     const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+    const onPointer = (el, fn, passive = false) => { el?.addEventListener('touchstart', fn, { passive }); el?.addEventListener('mousedown', fn); };
 
     // ============================================
     // STATE
@@ -275,10 +272,8 @@
 
     const state = {
         isDrag: false, isResize: false, isIconDrag: false,
-        startX: 0, startY: 0, initX: 0, initY: 0, initW: 0, initH: 0,
-        iconStartX: 0, iconStartY: 0, resizeDir: '',
-        idleTimer: null, rafId: null, isSeeking: false,
-        origW: 0, origH: 0
+        startX: 0, startY: 0, initX: 0, initY: 0, initW: 0, initH: 0, resizeDir: '',
+        idleTimer: null, rafId: null, isSeeking: false, origW: 0, origH: 0
     };
 
     // ============================================
@@ -462,15 +457,12 @@
         // Icon Drag
         const startIconDrag = e => {
             e.preventDefault(); e.stopPropagation(); resetIdle();
-            const c = getCoord(e);
+            const c = getCoord(e), r = icon.getBoundingClientRect();
             state.isIconDrag = true;
-            state.startX = state.iconStartX = c.x;
-            state.startY = state.iconStartY = c.y;
-            const r = icon.getBoundingClientRect();
+            state.startX = c.x; state.startY = c.y;
             state.initX = r.left; state.initY = r.top;
         };
-        icon.addEventListener('touchstart', startIconDrag, { passive: false });
-        icon.addEventListener('mousedown', startIconDrag);
+        onPointer(icon, startIconDrag);
 
         // Global Move/End
         const move = e => {
@@ -495,7 +487,7 @@
         };
 
         const end = e => {
-            if (state.isIconDrag && Math.hypot(getCoord(e).x - state.iconStartX, getCoord(e).y - state.iconStartY) < 8) toggleMenu();
+            if (state.isIconDrag && Math.hypot(getCoord(e).x - state.startX, getCoord(e).y - state.startY) < 8) toggleMenu();
             state.isDrag = state.isResize = state.isIconDrag = false;
         };
 
@@ -512,10 +504,7 @@
             state.startX = c.x; state.startY = c.y;
             state.initX = box.offsetLeft; state.initY = box.offsetTop;
         };
-        ['fvp-head-drag', 'fvp-left-drag'].forEach(id => {
-            $(id)?.addEventListener('touchstart', startDrag, { passive: false });
-            $(id)?.addEventListener('mousedown', startDrag);
-        });
+        ['fvp-head-drag', 'fvp-left-drag'].forEach(id => onPointer($(id), startDrag));
 
         // Resize Handles
         box.querySelectorAll('.fvp-resize-handle').forEach(h => {
@@ -527,8 +516,7 @@
                 state.startX = c.x; state.startY = c.y;
                 state.initW = box.offsetWidth; state.initH = box.offsetHeight;
             };
-            h.addEventListener('touchstart', startResize, { passive: false });
-            h.addEventListener('mousedown', startResize);
+            onPointer(h, startResize);
         });
 
         // Button Handlers
@@ -555,7 +543,6 @@
             $('fvp-rotate').style.transform = `rotate(${rotationAngle}deg)`;
         });
         btn('fvp-full', toggleFullscreen);
-        btn('fvp-mini', toggleFullscreen);
         btn('fvp-vol-btn', () => { if (curVid) { curVid.muted = !curVid.muted; updateVolUI(); } });
         btn('fvp-play-pause', () => {
             if (!curVid) return;
@@ -593,8 +580,6 @@
     const init = () => {
         document.head.appendChild(Object.assign(document.createElement('style'), { textContent: css }));
 
-        const hasVideos = document.querySelectorAll('video').length > 0;
-
         // Icon
         icon = el('div', 'fvp-idle', `
             <svg viewBox="0 0 24 24" style="width:24px;fill:#fff">
@@ -603,7 +588,7 @@
             <span id="fvp-badge" style="display:none">0</span>
         `);
         icon.id = 'fvp-master-icon';
-        Object.assign(icon.style, { bottom: '20px', left: '20px', display: hasVideos ? 'flex' : 'none' });
+        Object.assign(icon.style, { bottom: '20px', left: '20px', display: document.querySelectorAll('video').length ? 'flex' : 'none' });
         document.body.appendChild(icon);
 
         // Menu
@@ -646,7 +631,6 @@
                         <button id="fvp-fit" class="fvp-btn" title="Fit mode">⤢</button>
                         <button id="fvp-zoom" class="fvp-btn" title="Zoom video">+</button>
                         <button id="fvp-full" class="fvp-btn" title="Fullscreen">⛶</button>
-                        <button id="fvp-mini" class="fvp-btn" title="Exit fullscreen">⊟</button>
                         <button id="fvp-prev" class="fvp-btn" title="Previous">⏮</button>
                         <button id="fvp-next" class="fvp-btn" title="Next">⏭</button>
                     </div>
