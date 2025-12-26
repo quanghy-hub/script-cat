@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gestures
 // @namespace    unified-gestures
-// @version      4.1.0
+// @version      4.2.0
 // @description  Long-press/Right-click mở link, Double-tap đóng tab, Edge swipe scroll, Pager
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
@@ -85,11 +85,7 @@ const openTab = (url, mode) => {
     suppress(800);
 };
 
-const closeTab = () => {
-    try { window.close(); } catch { }
-    try { window.open('', '_self'); window.close(); } catch { }
-    suppress(600);
-};
+const closeTab = () => { try { window.close(); } catch { } };
 
 const cancelLP = () => { clearTimeout(State.lp.timer); State.lp.timer = null; State.lp.active = false; };
 
@@ -365,10 +361,7 @@ const initEvents = () => {
 
 /* INIT */
 injectStyles();
-
-const init = () => { initEvents(); };
-
-if (document.body) init();
-else document.addEventListener('DOMContentLoaded', init);
+if (document.body) initEvents();
+else document.addEventListener('DOMContentLoaded', initEvents);
 
 if (typeof GM_registerMenuCommand !== 'undefined') GM_registerMenuCommand('⚙️ Cài đặt (Alt+Shift+G)', openSettings);
