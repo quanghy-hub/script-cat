@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         MGesture
+// @name         Mobile Gestures
 // @namespace    mobile-gestures
-// @version      1.2.0
+// @version      1.2.3
 // @description  Long-press mở link, Double-tap đóng tab, Edge swipe scroll
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
@@ -58,12 +58,7 @@ const openTab = (url, mode) => {
     suppress(800);
 };
 
-const closeTab = () => {
-    try { window.close(); } catch { }
-    try { window.open('', '_self'); window.close(); } catch { }
-    // Removed history.back() fallback - it causes unexpected navigation
-    suppress(600);
-};
+const closeTab = () => { try { window.close(); } catch { } };
 
 const toast = msg => {
     let t = document.getElementById('ges-toast');
@@ -77,9 +72,7 @@ let momentumRAF = null;
 const startMomentum = (velocity) => {
     cancelAnimationFrame(momentumRAF);
     const el = document.scrollingElement || document.documentElement;
-    const friction = 0.97;
-    const minVelocity = 0.3;
-
+    const friction = 0.97, minVelocity = 0.3;
     const step = () => {
         if (Math.abs(velocity) < minVelocity) return;
         el.scrollTop += velocity;
