@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Translate
 // @namespace    vn.inline.translate.ctrl.swipe.groups
-// @version      2.6.1
+// @version      2.6.2
 // @description  Swipe/hotkey translate. Video safe zone. Optimized for mobile.
 // @author       you
 // @match        http://*/*
@@ -11,7 +11,6 @@
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
 // @connect      translate.googleapis.com
-// @connect      clients5.google.com
 // @connect      generativelanguage.googleapis.com
 // @run-at       document-idle
 // ==/UserScript==
@@ -102,13 +101,10 @@
 
   /* ================= TRANSLATION ================= */
   const cache = new Map();
-
-  // Regex: ký tự vô nghĩa (dấu câu, số, symbols, emoji, whitespace)
-  const JUNK_CHAR = /[\s\d\p{P}\p{S}\p{M}\p{C}\u200B-\u200D\uFEFF]/gu;
-  // Kiểm tra text có ý nghĩa không (có ít nhất 1 chữ cái)
-  const hasMeaningful = txt => txt.replace(JUNK_CHAR, '').length > 0;
-  // Làm sạch ký tự vô nghĩa thừa ở đầu/cuối dòng trong bản dịch
+  const JUNK = /[\s\d\p{P}\p{S}\p{M}\p{C}\u200B-\u200D\uFEFF]/gu;
+  const hasMeaningful = txt => txt.replace(JUNK, '').length > 0;
   const cleanJunk = txt => txt.replace(/^[\s\p{P}\p{S}]+|[\s\p{P}\p{S}]+$/gmu, '').replace(/\n{3,}/g, '\n\n').trim();
+  const parseGT = r => r[0].map(x => x[0]).join('');
 
   async function trans(txt, node) {
     // Toggle: remove existing translation
@@ -140,13 +136,10 @@
           onerror: err
         }));
       } else {
-        const url = (tl) => `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${tl}&dt=t&q=${encodeURIComponent(txt)}`;
-        const r1 = await new Promise(ok => GM_xmlhttpRequest({ method: 'GET', url: url('vi'), onload: e => ok(JSON.parse(e.responseText)) }));
-        res = r1[0].map(x => x[0]).join('');
-        if (r1[2] === 'vi') {
-          const r2 = await new Promise(ok => GM_xmlhttpRequest({ method: 'GET', url: url('en'), onload: e => ok(JSON.parse(e.responseText)) }));
-          res = r2[0].map(x => x[0]).join('');
-        }
+        const gtUrl = tl => `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${tl}&dt=t&q=${encodeURIComponent(txt)}`;
+        const gtReq = tl => new Promise(ok => GM_xmlhttpRequest({ method: 'GET', url: gtUrl(tl), onload: e => ok(JSON.parse(e.responseText)) }));
+        const r1 = await gtReq('vi');
+        res = r1[2] === 'vi' ? parseGT(await gtReq('en')) : parseGT(r1);
       }
       const cleaned = cleanJunk(res);
       if (!cleaned) { w.remove(); return; }
@@ -163,24 +156,11 @@
   }
 
   /* ================= VIDEO SAFE ZONE ================= */
-  const inVideoZone = (x, y) => {
-    // Check <video> elements
-    for (const v of document.querySelectorAll('video')) {
-      if (!v.offsetWidth || !v.offsetHeight) continue;
-      const r = v.getBoundingClientRect();
-      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return true;
-    }
-    // Check <iframe> video embeds
-    for (const f of document.querySelectorAll('iframe')) {
-      if (!f.offsetWidth || !f.offsetHeight) continue;
-      const r = f.getBoundingClientRect();
-      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
-        if (/youtube|vimeo|dailymotion|twitch|facebook.*video|tiktok/i.test(f.src || '')) return true;
-      }
-    }
-    // Fallback: common player classes
-    return document.elementsFromPoint(x, y).some(el => el.closest?.('video, .html5-video-player, .jwplayer, .vjs-tech, .plyr, .flowplayer'));
-  };
+  const inRect = (x, y, el) => { const r = el.getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; };
+  const inVideoZone = (x, y) =>
+    [...document.querySelectorAll('video')].some(v => v.offsetWidth && inRect(x, y, v)) ||
+    [...document.querySelectorAll('iframe')].some(f => f.offsetWidth && inRect(x, y, f) && /youtube|vimeo|dailymotion|twitch|facebook.*video|tiktok/i.test(f.src)) ||
+    document.elementsFromPoint(x, y).some(el => el.closest?.('video, .html5-video-player, .jwplayer, .vjs-tech, .plyr, .flowplayer'));
 
   /* ================= INPUT HANDLERS ================= */
   // Mouse position (desktop only)
@@ -198,29 +178,22 @@
   });
 
   // Swipe (mobile)
-  let sx = 0, sy = 0, t0 = 0, startInVideo = false;
+  let sx = 0, sy = 0, t0 = 0, sVid = false;
 
   document.addEventListener('touchstart', e => {
     if (!cfg.swipeEnabled || e.touches.length !== 1) return;
-    sx = e.touches[0].clientX;
-    sy = e.touches[0].clientY;
-    t0 = Date.now();
-    startInVideo = inVideoZone(sx, sy);
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+    t0 = Date.now(); sVid = inVideoZone(sx, sy);
   }, { passive: true });
 
   document.addEventListener('touchend', e => {
     if (!cfg.swipeEnabled || !sx || Date.now() - t0 > 500) { sx = 0; return; }
     const ex = e.changedTouches[0].clientX, ey = e.changedTouches[0].clientY;
-    if (startInVideo || inVideoZone(ex, ey)) { sx = 0; return; }
-
-    const dx = ex - sx, dy = ey - sy;
-    sx = 0;
-
-    if (Math.abs(dx) > cfg.swipePx && Math.abs(dy) < Math.abs(dx) * cfg.swipeSlopeMax) {
-      if (cfg.swipeDir === 'both' || (cfg.swipeDir === 'right' && dx > 0) || (cfg.swipeDir === 'left' && dx < 0)) {
-        act(ex - dx / 2, ey - dy / 2);
-      }
-    }
+    if (sVid || inVideoZone(ex, ey)) { sx = 0; return; }
+    const dx = ex - sx, dy = ey - sy; sx = 0;
+    if (Math.abs(dx) > cfg.swipePx && Math.abs(dy) < Math.abs(dx) * cfg.swipeSlopeMax &&
+      (cfg.swipeDir === 'both' || (cfg.swipeDir === 'right' && dx > 0) || (cfg.swipeDir === 'left' && dx < 0)))
+      act(ex - dx / 2, ey - dy / 2);
   }, { passive: true });
 
   /* ================= SETTINGS UI ================= */
