@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YSub
 // @namespace    yt
-// @version      2.9.1
+// @version      2.9.2
 // @description  Bilingual Subtitles with Settings and Drag Support
 // @match        https://www.youtube.com/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/yt.js
@@ -233,108 +233,44 @@
             document.addEventListener('touchcancel', this._boundHandlers.onDragEnd);
         },
 
-        onDragMove(e) {
-            if (!State.isDragging) return;
-
-            e.preventDefault();
-            e.stopPropagation();
-
+        // Hàm xử lý drag chung cho cả mouse và touch
+        handleDragMove(clientX, clientY) {
             const container = $(SELECTORS.subtitleContainer);
             if (!container) return;
 
-            // Tính toán vị trí mới
-            const deltaX = e.clientX - State.dragStartPos.x;
-            const deltaY = e.clientY - State.dragStartPos.y;
+            const deltaX = clientX - State.dragStartPos.x;
+            const deltaY = clientY - State.dragStartPos.y;
 
-            let newX = State.containerStartPos.x + deltaX;
-            let newY = State.containerStartPos.y + deltaY;
-
-            // Giới hạn trong phạm vi màn hình
             const maxX = window.innerWidth - container.offsetWidth;
             const maxY = window.innerHeight - container.offsetHeight;
 
-            newX = Math.max(0, Math.min(newX, maxX));
-            newY = Math.max(0, Math.min(newY, maxY));
+            const newX = Math.max(0, Math.min(State.containerStartPos.x + deltaX, maxX));
+            const newY = Math.max(0, Math.min(State.containerStartPos.y + deltaY, maxY));
 
-            // Xác định canh lề dựa trên vị trí
-            let alignment = 'left';
-            if (newX > maxX * 0.7) {
-                alignment = 'right';
-                container.style.right = (window.innerWidth - newX - container.offsetWidth) + 'px';
-                container.style.left = 'auto';
-            } else if (newX < maxX * 0.3) {
-                alignment = 'left';
-                container.style.left = newX + 'px';
-                container.style.right = 'auto';
-            } else {
-                alignment = 'center';
-                container.style.left = newX + 'px';
-                container.style.right = 'auto';
-            }
+            // Xác định canh lề và áp dụng vị trí
+            const alignment = newX > maxX * 0.7 ? 'right' : newX < maxX * 0.3 ? 'left' : 'center';
 
-            // Áp dụng vị trí mới
-            container.style.left = alignment === 'center' || alignment === 'left' ? newX + 'px' : 'auto';
+            container.style.left = alignment === 'right' ? 'auto' : newX + 'px';
             container.style.right = alignment === 'right' ? (window.innerWidth - newX - container.offsetWidth) + 'px' : 'auto';
             container.style.top = newY + 'px';
             container.style.bottom = 'auto';
-
-            // Xóa các thuộc tính cũ
             container.style.transform = 'none';
 
-            // Lưu vị trí tạm thời
             State.currentDragPos = { x: newX, y: newY, alignment };
+        },
+
+        onDragMove(e) {
+            if (!State.isDragging) return;
+            e.preventDefault();
+            e.stopPropagation();
+            this.handleDragMove(e.clientX, e.clientY);
         },
 
         onDragMoveTouch(e) {
             if (!State.isDragging || e.touches.length !== 1) return;
-
             e.preventDefault();
             e.stopPropagation();
-
-            const container = $(SELECTORS.subtitleContainer);
-            if (!container) return;
-
-            // Tính toán vị trí mới từ touch
-            const deltaX = e.touches[0].clientX - State.dragStartPos.x;
-            const deltaY = e.touches[0].clientY - State.dragStartPos.y;
-
-            let newX = State.containerStartPos.x + deltaX;
-            let newY = State.containerStartPos.y + deltaY;
-
-            // Giới hạn trong phạm vi màn hình
-            const maxX = window.innerWidth - container.offsetWidth;
-            const maxY = window.innerHeight - container.offsetHeight;
-
-            newX = Math.max(0, Math.min(newX, maxX));
-            newY = Math.max(0, Math.min(newY, maxY));
-
-            // Xác định canh lề dựa trên vị trí
-            let alignment = 'left';
-            if (newX > maxX * 0.7) {
-                alignment = 'right';
-                container.style.right = (window.innerWidth - newX - container.offsetWidth) + 'px';
-                container.style.left = 'auto';
-            } else if (newX < maxX * 0.3) {
-                alignment = 'left';
-                container.style.left = newX + 'px';
-                container.style.right = 'auto';
-            } else {
-                alignment = 'center';
-                container.style.left = newX + 'px';
-                container.style.right = 'auto';
-            }
-
-            // Áp dụng vị trí mới
-            container.style.left = alignment === 'center' || alignment === 'left' ? newX + 'px' : 'auto';
-            container.style.right = alignment === 'right' ? (window.innerWidth - newX - container.offsetWidth) + 'px' : 'auto';
-            container.style.top = newY + 'px';
-            container.style.bottom = 'auto';
-
-            // Xóa các thuộc tính cũ
-            container.style.transform = 'none';
-
-            // Lưu vị trí tạm thời
-            State.currentDragPos = { x: newX, y: newY, alignment };
+            this.handleDragMove(e.touches[0].clientX, e.touches[0].clientY);
         },
 
         onDragEnd(e) {
@@ -889,37 +825,23 @@
         }
     });
 
-    // Wait for YouTube player controls with retry
-    let initRetries = 0;
-    const maxRetries = 20;
+    // Wait for YouTube player controls
+    const waitForControls = () => {
+        if ($(SELECTORS.controls)) return init();
 
-    function tryInit() {
-        if ($(SELECTORS.controls)) {
-            init();
-            return true;
-        }
-        return false;
-    }
-
-    const pageObserver = new MutationObserver(() => {
-        if (tryInit()) {
-            pageObserver.disconnect();
-        }
-    });
-    pageObserver.observe(document.documentElement, { childList: true, subtree: true });
-
-    // Retry mechanism for Edge and slow-loading pages
-    const retryInit = () => {
-        if (initRetries >= maxRetries) return;
-        if (!tryInit()) {
-            initRetries++;
-            setTimeout(retryInit, 500);
-        }
+        let retries = 0;
+        const observer = new MutationObserver(() => {
+            if ($(SELECTORS.controls)) {
+                observer.disconnect();
+                init();
+            } else if (++retries > 50) {
+                observer.disconnect();
+            }
+        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
     };
 
-    if (document.readyState !== 'loading') {
-        setTimeout(retryInit, 100);
-    } else {
-        window.addEventListener('DOMContentLoaded', () => setTimeout(retryInit, 100), { once: true });
-    }
+    document.readyState === 'loading'
+        ? document.addEventListener('DOMContentLoaded', waitForControls, { once: true })
+        : waitForControls();
 })();
