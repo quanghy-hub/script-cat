@@ -281,20 +281,7 @@
   };
 
   // ══════════════════════════════════════════════════════════════
-  // MENU COMMANDS
+  // MENU COMMAND
   // ══════════════════════════════════════════════════════════════
-  const adjustPct = delta => {
-    state.pct = clamp(state.pct + delta, MIN, MAX);
-    save(); applyPct(state.pct);
-  };
-
-  try {
-    GM_registerMenuCommand(`Aa • Mở cài đặt (${HOST})`, openPanel);
-    GM_registerMenuCommand(`Aa • +1%`, () => adjustPct(1));
-    GM_registerMenuCommand(`Aa • -1%`, () => adjustPct(-1));
-    GM_registerMenuCommand(`Aa • Reset 100%`, () => { state.pct = 100; save(); applyPct(100); });
-    GM_registerMenuCommand(state.enabled ? `Aa • Tắt trên ${HOST}` : `Aa • Bật trên ${HOST}`, () => {
-      state.enabled = !state.enabled; save(); applyPct(state.pct);
-    });
-  } catch { /* ignore */ }
+  try { GM_registerMenuCommand(`Aa Cỡ chữ (${HOST})`, openPanel); } catch { }
 })();
