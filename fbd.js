@@ -76,7 +76,7 @@
   }
 
   // ======== Utils ========
-  function showToast(msg, ms=1500) {
+  function showToast(msg, ms = 1500) {
     const el = document.createElement('div');
     el.className = 'fbvdl-toast';
     el.textContent = msg;
@@ -89,7 +89,7 @@
     return Math.min(r.bottom, window.innerHeight) - Math.max(0, r.top);
   }
 
-  const approxEqual = (a,b,eps=4)=> Math.abs(a-b)<=eps;
+  const approxEqual = (a, b, eps = 4) => Math.abs(a - b) <= eps;
 
   function safeRequire(mod) {
     try { return (window.require || window.__d?.require || require)?.(mod); } catch { return null; }
@@ -103,12 +103,12 @@
           if (k && typeof k === 'string' && k.startsWith('__reactProps')) {
             const p = el[k];
             const id = p?.children?.props?.videoFBID
-                    || p?.children?.props?.video?.id
-                    || p?.children?.props?.video?.videoId;
+              || p?.children?.props?.video?.id
+              || p?.children?.props?.video?.videoId;
             if (id) return String(id);
           }
         }
-      } catch {}
+      } catch { }
       el = el.parentElement;
     }
     return null;
@@ -131,7 +131,7 @@
     if (playing) return [playing.videoId];
     return res
       .filter(x => x.videoId && (x.overlapScore > 0 || x.playing))
-      .sort((a,b)=> b.overlapScore - a.overlapScore)
+      .sort((a, b) => b.overlapScore - a.overlapScore)
       .map(x => x.videoId);
   }
 
@@ -168,10 +168,10 @@
   }
 
   async function getLinkFbVideo2(videoId, dtsg) {
-    const res = await fetch('https://www.facebook.com/video/video_data_async/?video_id='+videoId, {
+    const res = await fetch('https://www.facebook.com/video/video_data_async/?video_id=' + videoId, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: stringifyVariables({ __a:'1', fb_dtsg: dtsg }),
+      body: stringifyVariables({ __a: '1', fb_dtsg: dtsg }),
     });
     let text = await res.text();
     text = text.replace('for (;;);', '');
@@ -213,7 +213,7 @@
   }
 
   // ======== Open in NEW TAB (robust) ========
-  function openInNewTab(url, downloadName=null) {
+  function openInNewTab(url, downloadName = null) {
     // 1) GM_openInTab (ổn định nhất trên mobile)
     if (typeof GM_openInTab === 'function') {
       GM_openInTab(url, { active: true, insert: true, setParent: true }); // luôn tab mới, foreground
@@ -222,7 +222,7 @@
     // 2) window.open
     const win = window.open(url, '_blank', 'noopener,noreferrer');
     if (win && !win.closed) {
-      try { win.opener = null; } catch {}
+      try { win.opener = null; } catch { }
       return true;
     }
     // 3) Fallback: <a target="_blank">
@@ -258,7 +258,7 @@
       openVideo(videoUrl); // <— mở sang TAB MỚI
       showToast('Đã mở video ở tab mới');
     } finally {
-      setTimeout(()=> clicking=false, 250);
+      setTimeout(() => clicking = false, 250);
     }
   }
 
@@ -283,12 +283,12 @@
   function findControlBar(video) {
     const vr = video.getBoundingClientRect();
     let el = video.parentElement;
-    for (let d=0; d<6 && el; d++, el = el.parentElement) {
+    for (let d = 0; d < 6 && el; d++, el = el.parentElement) {
       const roleToolbar = el.querySelector('div[role="toolbar"]');
       if (roleToolbar && isControlBarCandidate(roleToolbar, vr)) return roleToolbar;
 
       const ariaCandidates = el.querySelectorAll('div[aria-label], div[role="group"]');
-      for (const c of ariaCandidates) if ( isControlBarCandidate(c, vr) ) return c;
+      for (const c of ariaCandidates) if (isControlBarCandidate(c, vr)) return c;
 
       const slider = el.querySelector('[aria-valuemin][aria-valuemax]');
       if (slider) {
@@ -297,7 +297,7 @@
       }
 
       const divs = el.querySelectorAll('div');
-      for (const c of divs) if ( isControlBarCandidate(c, vr) ) return c;
+      for (const c of divs) if (isControlBarCandidate(c, vr)) return c;
     }
     return null;
   }
@@ -337,7 +337,7 @@
     const bar = findControlBar(video);
     if (!bar) return false;
     if (bar.querySelector('.fbvdl-inbar')) { video.dataset.fbvdlInBarAttached = '1'; return true; }
-    try { bar.appendChild( makeInBarButton(video) ); }
+    try { bar.appendChild(makeInBarButton(video)); }
     catch { return false; }
     video.dataset.fbvdlInBarAttached = '1';
     return true;
@@ -394,7 +394,7 @@
     const startLP = () => {
       heldLong = false;
       if (pressTimer) clearTimeout(pressTimer);
-      pressTimer = setTimeout(()=> { heldLong = true; }, LONG_PRESS_MS);
+      pressTimer = setTimeout(() => { heldLong = true; }, LONG_PRESS_MS);
     };
     const endLP = async () => {
       if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
@@ -407,12 +407,12 @@
     };
 
     // Mobile & desktop
-    video.addEventListener('touchstart', startLP, {passive:true});
-    video.addEventListener('touchend', endLP, {passive:false});
-    video.addEventListener('touchcancel', ()=>{ if (pressTimer) clearTimeout(pressTimer); }, {passive:true});
-    video.addEventListener('mousedown', startLP, {passive:true});
-    video.addEventListener('mouseup', endLP, {passive:false});
-    video.addEventListener('mouseleave', ()=>{ if (pressTimer) clearTimeout(pressTimer); }, {passive:true});
+    video.addEventListener('touchstart', startLP, { passive: true });
+    video.addEventListener('touchend', endLP, { passive: false });
+    video.addEventListener('touchcancel', () => { if (pressTimer) clearTimeout(pressTimer); }, { passive: true });
+    video.addEventListener('mousedown', startLP, { passive: true });
+    video.addEventListener('mouseup', endLP, { passive: false });
+    video.addEventListener('mouseleave', () => { if (pressTimer) clearTimeout(pressTimer); }, { passive: true });
 
     video.dataset.fbvdlOverlayAttached = '1';
   }
@@ -439,7 +439,7 @@
         }
       }
     });
-    mo.observe(document.documentElement, { childList:true, subtree:true });
+    mo.observe(document.documentElement, { childList: true, subtree: true });
   }
 
   // ======== Keyboard & Menu ========
