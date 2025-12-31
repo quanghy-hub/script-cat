@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Screenshot
-// @namespace    video-screenshot
-// @version      1.2.2
+// @namespace    screenshot
+// @version      1.2.3
 // @description  Screenshot any video on any website
 // @match        *://*/*
 // @exclude      /^https?://\S+\.(txt|png|jpg|jpeg|gif|xml|svg|manifest|log|ini)[^\/]*$/
@@ -16,10 +16,10 @@
 
     // ========== CONFIG ==========
     const CONFIG = {
-        btnSize: 28,
+        btnSize: 26,
         btnTop: 40,
         btnLeft: 10,
-        iconSize: 28,
+        iconSize: 26,
         minVideoWidth: 200,
         minVideoHeight: 150,
         fadeDelay: 3000,
