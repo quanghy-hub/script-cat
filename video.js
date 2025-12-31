@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video
-// @namespace    https://your.namespace
-// @version      2.6.1
+// @namespace    
+// @version      2.6.2
 // @description  Swipe seek optimized for Chrome mobile
 // @match        *://*/*
 // @grant        GM_setValue

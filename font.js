@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Text Size
-// @namespace    qh.textsize.per_site
-// @version      2.1.0
+// @namespace    textsize
+// @version      2.1.1
 // @description  Tăng/giảm cỡ CHỮ THEO TỪNG WEBSITE bằng text-size-adjust.
 // @match        *://*/*
 // @exclude      *://mail.google.com/*

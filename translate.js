@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Translate
-// @namespace    vn.inline.translate.ctrl.swipe.groups
-// @version      2.6.2
+// @namespace    translate
+// @version      2.6.3
 // @description  Swipe/hotkey translate. Video safe zone. Optimized for mobile.
 // @author       you
 // @match        http://*/*

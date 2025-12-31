@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Floating
-// @namespace    http://tampermonkey.net/
-// @version      5.9.1
+// @namespace    
+// @version      5.9.2
 // @description  Floating video player optimized for mobile with video rotation
 // @author       Claude
 // @match        *://*/*

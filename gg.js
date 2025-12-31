@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ggbutton
-// @description  Quick time filter for Google Search
-// @version      5.1.1
+// @description  Google Search
+// @version      5.1.2
 // @match        *://www.google.*/search*
 // @include      /^https?:\/\/www\.google\.[a-z.]+\/search.*/
 // @run-at       document-end

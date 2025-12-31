@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trusted
-// @namespace    trusted-types-bypass
-// @version      2.0.0
+// @namespace    trusted
+// @version      2.1.0
 // @description  Creates default Trusted Types policy for all websites with CSP
 // @match        *://*/*
 // @grant        none

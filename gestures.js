@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gestures
-// @namespace    unified-gestures
-// @version      4.2.0
+// @namespace    gestures
+// @version      4.2.1
 // @description  Long-press/Right-click mở link, Double-tap đóng tab, Edge swipe scroll, Pager
 // @match        *://*/*
 // @exclude      *://mail.google.com/*

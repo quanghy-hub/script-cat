@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Imagedl
-// @namespace    http://tampermonkey.net/
+// @namespace    
 // @description  Extract and batch download images from websites. Supports zip download, auto-enlarge, canvas capture.
-// @version      3.1.0
+// @version      3.1.1
 // @connect      *
 // @grant        GM_openInTab
 // @grant        GM_registerMenuCommand
