@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dark
 // @namespace    dark
-// @version      2.5
+// @version      2.6
 // @description  Smart Dark Mode - Chỉ CSS, giữ nguyên màu sắc.
 // @author       You
 // @match        http://*/*
@@ -20,11 +20,13 @@
     const STYLE_ID = 'sdm-css';
     const host = location.hostname;
 
-    const def = { enabled: true, auto: true, siteExcludes: [], brightness: 100, saturation: 100 };
+    const def = { enabled: true, auto: true, siteExcludes: [], siteAutoSettings: {}, brightness: 100, saturation: 100 };
     let cfg = { ...def, ...(() => { try { return JSON.parse(GM_getValue(KEY) || '{}'); } catch { return {}; } })() };
     if (!Array.isArray(cfg.siteExcludes)) cfg.siteExcludes = [];
+    if (typeof cfg.siteAutoSettings !== 'object' || cfg.siteAutoSettings === null) cfg.siteAutoSettings = {};
 
     const isSiteEnabled = () => cfg.enabled && !cfg.siteExcludes.includes(host);
+    const getSiteAuto = () => cfg.siteAutoSettings.hasOwnProperty(host) ? cfg.siteAutoSettings[host] : cfg.auto;
 
     /* ================= COLOR UTILS ================= */
     const parseColor = c => {
@@ -47,7 +49,7 @@
 
     /* ================= CSS ================= */
     const DARK_CSS = `
-/* Smart Dark Mode v2.5 */
+/* Smart Dark Mode v2.6 */
 html.sdm-active {
     background: #1a1a1a !important;
     color-scheme: dark !important;
@@ -114,8 +116,7 @@ html.sdm-active pre, html.sdm-active code {
 }
 
 /* Border */
-html.sdm-active hr { border-color: #444 !important; }
-html.sdm-active div, html.sdm-active section, html.sdm-active article,
+html.sdm-active hr, html.sdm-active div, html.sdm-active section, html.sdm-active article,
 html.sdm-active table, html.sdm-active td, html.sdm-active th,
 html.sdm-active input, html.sdm-active textarea, html.sdm-active select,
 html.sdm-active button, html.sdm-active fieldset {
@@ -129,6 +130,27 @@ html.sdm-active ::-webkit-scrollbar-thumb { background: #444; border-radius: 5px
 
 /* Selection */
 html.sdm-active ::selection { background: #3a5f8a !important; color: #fff !important; }
+
+/* Hover panels, tooltips, dropdowns - nền đen, chữ trắng */
+html.sdm-active [class*="tooltip"], html.sdm-active [class*="Tooltip"],
+html.sdm-active [class*="popover"], html.sdm-active [class*="Popover"],
+html.sdm-active [class*="dropdown"], html.sdm-active [class*="Dropdown"],
+html.sdm-active [class*="menu"], html.sdm-active [class*="Menu"],
+html.sdm-active [class*="panel"], html.sdm-active [class*="Panel"],
+html.sdm-active [class*="modal"], html.sdm-active [class*="Modal"],
+html.sdm-active [role="tooltip"], html.sdm-active [role="menu"],
+html.sdm-active [role="dialog"], html.sdm-active [role="menuitem"] {
+    background: #1a1a1a !important;
+    color: #e0e0e0 !important;
+    border-color: #444 !important;
+}
+
+/* Hover states */
+html.sdm-active a:hover, html.sdm-active button:hover,
+html.sdm-active [role="button"]:hover {
+    background: #2a2a2a !important;
+    color: #fff !important;
+}
 `;
 
     const PANEL_CSS = `
@@ -211,11 +233,12 @@ html.sdm-active ::selection { background: #3a5f8a !important; color: #fff !impor
 
     function apply() {
         if (!isSiteEnabled()) return disable();
-        cfg.auto ? (isNativeDark() ? disable() : enable()) : enable();
+        const autoMode = getSiteAuto();
+        autoMode ? (isNativeDark() ? disable() : enable()) : enable();
     }
 
     /* ================= INIT ================= */
-    if (isSiteEnabled() && !cfg.auto) enable();
+    if (isSiteEnabled() && !getSiteAuto()) enable();
     document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', apply) : apply();
 
     /* ================= UI ================= */
@@ -231,11 +254,12 @@ html.sdm-active ::selection { background: #3a5f8a !important; color: #fff !impor
         }
 
         const excluded = cfg.siteExcludes.includes(host);
+        const siteAuto = getSiteAuto();
         const p = document.createElement('div');
         p.id = 'sdm-panel';
         p.innerHTML = `
             <div class="sdm-header">
-                <span class="sdm-title">Smart Dark v2.5</span>
+                <span class="sdm-title">Smart Dark v2.6</span>
                 <label><input type="checkbox" id="sdm-en" ${cfg.enabled ? 'checked' : ''}> Bật</label>
             </div>
             <div class="sdm-row">
@@ -243,8 +267,8 @@ html.sdm-active ::selection { background: #3a5f8a !important; color: #fff !impor
                 <input type="checkbox" id="sdm-site" ${!excluded ? 'checked' : ''}>
             </div>
             <div class="sdm-row">
-                <span>Tự động nhận diện</span>
-                <input type="checkbox" id="sdm-auto" ${cfg.auto ? 'checked' : ''}>
+                <span>Tự động nhận diện cho <span class="sdm-highlight">${host}</span></span>
+                <input type="checkbox" id="sdm-auto" ${siteAuto ? 'checked' : ''}>
             </div>
             <div class="sdm-sliders">
                 <div class="sdm-slider-row"><span>Độ sáng</span><span class="sdm-slider-val" id="sdm-bri-val">${cfg.brightness}%</span></div>
@@ -267,11 +291,11 @@ html.sdm-active ::selection { background: #3a5f8a !important; color: #fff !impor
 
         $('#sdm-save').onclick = () => {
             cfg.enabled = $('#sdm-en').checked;
-            cfg.auto = $('#sdm-auto').checked;
+            cfg.siteAutoSettings[host] = $('#sdm-auto').checked;
             cfg.brightness = +$('#sdm-bri').value;
             cfg.saturation = +$('#sdm-sat').value;
             const on = $('#sdm-site').checked;
-            cfg.siteExcludes = on ? cfg.siteExcludes.filter(h => h !== host) : [...new Set([...cfg.siteExcludes, host])];
+            cfg.siteExcludes = on ? cfg.siteExcludes.filter(h => h !== host) : cfg.siteExcludes.includes(host) ? cfg.siteExcludes : [...cfg.siteExcludes, host];
             GM_setValue(KEY, JSON.stringify(cfg));
             location.reload();
         };
