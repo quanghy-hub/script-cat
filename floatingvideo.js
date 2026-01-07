@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Floating
 // @namespace    
-// @version      5.9.3
+// @version      5.9.4
 // @description  Floating video player optimized for mobile with video rotation
 // @author       Claude
 // @match        *://*/*
@@ -153,7 +153,8 @@
         #fvp-seek:active::-webkit-slider-thumb { background: #0d8fd8; }
         
         #fvp-time-display {
-            position: absolute; top: 0; left: 0; right: 0; padding: 0 2px;
+            position: absolute; top: 50%; left: 0; right: 0; 
+            transform: translateY(-50%); padding: 0 2px;
             display: flex; justify-content: space-between;
             font-size: 10px; color: rgba(255,255,255,0.9); pointer-events: none;
         }
