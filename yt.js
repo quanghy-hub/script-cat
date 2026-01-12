@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YSub
 // @namespace    yt
-// @version      2.9.5
+// @version      2.9.8
 // @description  Bilingual Subtitles with Settings and Drag Support
 // @match        https://www.youtube.com/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/yt.js
@@ -22,9 +22,10 @@
     const CONFIG = {
         STORAGE_KEY: 'yt-subtitle-settings',
         CACHE_LIMIT: 500,
-        DEBOUNCE_MS: 300,
-        SENTENCE_STABLE_MS: 800,
+        DEBOUNCE_MS: 100,
+        SENTENCE_STABLE_MS: 300,
         MIN_TEXT_LENGTH: 15,
+        MAX_TEXT_LENGTH: 120,
         TRANSLATE_API: 'https://translate.googleapis.com/translate_a/single',
         SENTENCE_END: /[.!?;:。！？；：]\s*$/
     };
@@ -369,11 +370,19 @@
             if (!currentText) return this.removeContainer();
             if (currentText === State.lastRawText) return;
 
-            // Chỉ lấy câu cuối nếu có nhiều câu
+            // Chỉ lấy câu cuối nếu có nhiều câu, hoặc cắt ngắn nếu quá dài
             const sentences = currentText.split(/(?<=[.!?。！？])\s+/);
             if (sentences.length > 1) {
                 const last = sentences[sentences.length - 1];
                 currentText = last.length >= CONFIG.MIN_TEXT_LENGTH ? last : sentences.slice(-2).join(' ');
+            }
+
+            // Giới hạn độ dài tối đa
+            if (currentText.length > CONFIG.MAX_TEXT_LENGTH) {
+                // Cắt từ cuối, tìm khoảng trắng gần nhất để không cắt giữa từ
+                const truncated = currentText.slice(-CONFIG.MAX_TEXT_LENGTH);
+                const spaceIdx = truncated.indexOf(' ');
+                currentText = spaceIdx > 0 ? truncated.slice(spaceIdx + 1) : truncated;
             }
 
             if (State.lastStableText && !currentText.includes(State.lastStableText.substring(0, 15)) &&
@@ -491,7 +500,7 @@
 
             if (State.enabled) {
                 Observer.start();
-                Translation.debouncedProcess();
+                Translation.process(); // Dịch ngay lập tức khi bật
             } else {
                 Observer.stop();
                 Translation.removeContainer(true);
