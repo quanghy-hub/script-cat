@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YSub
 // @namespace    yt
-// @version      2.9.3
+// @version      2.9.5
 // @description  Bilingual Subtitles with Settings and Drag Support
 // @match        https://www.youtube.com/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/yt.js
@@ -22,19 +22,20 @@
     const CONFIG = {
         STORAGE_KEY: 'yt-subtitle-settings',
         CACHE_LIMIT: 500,
-        DEBOUNCE_MS: 300,           // Tăng debounce để giảm cập nhật
-        SENTENCE_STABLE_MS: 800,    // Đợi câu ổn định trước khi dịch
-        MIN_TEXT_LENGTH: 15,        // Độ dài tối thiểu để bắt đầu dịch
-        TRANSLATE_API: 'https://translate.googleapis.com/translate_a/single'
+        DEBOUNCE_MS: 300,
+        SENTENCE_STABLE_MS: 800,
+        MIN_TEXT_LENGTH: 15,
+        TRANSLATE_API: 'https://translate.googleapis.com/translate_a/single',
+        SENTENCE_END: /[.!?;:。！？；：]\s*$/
     };
 
-    const SELECTORS = {
+    const SEL = {
         player: '#movie_player, .html5-video-player',
         controls: '.ytp-right-controls',
         translateBtn: '.ytp-translate-button',
         settingsBtn: '.ytp-subtitle-settings-button',
         settingsPanel: '#yt-subtitle-settings',
-        subtitleContainer: '#yt-bilingual-subtitles',
+        container: '#yt-bilingual-subtitles',
         captionSegment: '.ytp-caption-segment',
         video: 'video'
     };
@@ -49,13 +50,8 @@
     const $ = (sel, ctx = document) => ctx.querySelector(sel);
     const $$ = (sel, ctx = document) => ctx.querySelectorAll(sel);
     const isWatchPage = () => /\/watch|[?&]v=/.test(location.href);
-
-    const safeHTML = (html) => {
-        if (typeof trustedTypes !== 'undefined' && trustedTypes.defaultPolicy) {
-            return trustedTypes.defaultPolicy.createHTML(html);
-        }
-        return html;
-    };
+    const safeHTML = (html) => typeof trustedTypes !== 'undefined' && trustedTypes.defaultPolicy
+        ? trustedTypes.defaultPolicy.createHTML(html) : html;
 
     // ==================== SETTINGS ====================
     const Settings = {
@@ -67,8 +63,8 @@
             translatedColor: '#0e8cecff',
             displayMode: 'compact',
             showOriginal: true,
-            containerPosition: { x: '5%', y: '70px' }, // Vị trí container
-            containerAlignment: 'left' // Canh lề: left, center, right
+            containerPosition: { x: '5%', y: '70px' },
+            containerAlignment: 'left'
         },
         current: null,
 
@@ -76,9 +72,7 @@
             try {
                 const saved = localStorage.getItem(CONFIG.STORAGE_KEY);
                 this.current = { ...this.defaults, ...(saved ? JSON.parse(saved) : {}) };
-            } catch {
-                this.current = { ...this.defaults };
-            }
+            } catch { this.current = { ...this.defaults }; }
             return this.current;
         },
 
@@ -87,17 +81,10 @@
             Styles.update();
         },
 
-        get(key) {
-            return this.current?.[key] ?? this.defaults[key];
-        },
+        get(key) { return this.current?.[key] ?? this.defaults[key]; },
+        set(key, value) { this.current[key] = value; this.save(); },
 
-        set(key, value) {
-            this.current[key] = value;
-            this.save();
-        },
-
-        // Lưu vị trí container
-        saveContainerPosition(x, y, alignment = 'left') {
+        savePosition(x, y, alignment = 'left') {
             this.current.containerPosition = { x, y };
             this.current.containerAlignment = alignment;
             this.save();
@@ -106,259 +93,135 @@
 
     // ==================== STATE ====================
     const State = {
-        translateEnabled: false,
+        enabled: false,
         observer: null,
         processTimeout: null,
         sentenceTimeout: null,
         cache: new Map(),
         isDragging: false,
-        dragStartPos: { x: 0, y: 0 },
-        containerStartPos: { x: 0, y: 0 },
-        currentDragPos: null,
+        dragStart: { x: 0, y: 0 },
+        containerStart: { x: 0, y: 0 },
         lastRawText: '',
-        lastStableText: '',
-        pendingText: ''
+        lastStableText: ''
     };
 
     // ==================== DRAG MANAGER ====================
-    const DragManager = {
-        // Lưu trữ các handler đã bind để có thể remove đúng cách
-        _boundHandlers: null,
-        _currentContainer: null,
+    const Drag = {
+        _handlers: null,
 
         init(container) {
-            if (!container) return;
+            if (!container || container._dragInit) return;
+            container._dragInit = true;
 
-            // Nếu đã init container này rồi thì bỏ qua
-            if (container._dragInitialized) return;
-            container._dragInitialized = true;
-
-            this._currentContainer = container;
-
-            // Bind handlers một lần duy nhất và lưu lại
-            this._boundHandlers = {
-                onDragStart: this.onDragStart.bind(this),
-                onDragStartTouch: this.onDragStartTouch.bind(this),
-                onDragMove: this.onDragMove.bind(this),
-                onDragMoveTouch: this.onDragMoveTouch.bind(this),
-                onDragEnd: this.onDragEnd.bind(this)
+            this._handlers = {
+                move: this.onMove.bind(this),
+                end: this.onEnd.bind(this)
             };
 
-            // Thêm lớp drag-handle vào container
-            container.classList.add('yt-sub-draggable');
-
-            // Thiết lập vị trí từ cài đặt
-            this.applySavedPosition(container);
-
-            // Thêm sự kiện cho chuột
-            container.addEventListener('mousedown', this._boundHandlers.onDragStart);
-            container.addEventListener('touchstart', this._boundHandlers.onDragStartTouch, { passive: false });
-
-            // Ngăn chặn sự kiện mặc định khi kéo
-            container.addEventListener('dragstart', (e) => e.preventDefault());
-
-            // Thêm style cho container khi kéo
+            this.applyPosition(container);
             container.style.cursor = 'move';
             container.style.userSelect = 'none';
+
+            container.addEventListener('mousedown', (e) => this.onStart(e, container));
+            container.addEventListener('touchstart', (e) => this.onStart(e, container), { passive: false });
+            container.addEventListener('dragstart', (e) => e.preventDefault());
         },
 
-        onDragStart(e) {
-            // Cho phép kéo cả khi click vào text (người dùng thường click vào text)
-            // Chỉ chặn nếu đang select text
-            if (window.getSelection()?.toString()) {
-                return;
-            }
-
+        onStart(e, container) {
+            if (window.getSelection()?.toString()) return;
             e.preventDefault();
             e.stopPropagation();
 
-            const container = this._currentContainer || $(SELECTORS.subtitleContainer);
-            if (!container) return;
+            const isTouch = e.type === 'touchstart';
+            if (isTouch && e.touches.length !== 1) return;
 
             State.isDragging = true;
-
-            // Lưu vị trí bắt đầu
-            State.dragStartPos.x = e.clientX;
-            State.dragStartPos.y = e.clientY;
+            const point = isTouch ? e.touches[0] : e;
+            State.dragStart = { x: point.clientX, y: point.clientY };
 
             const rect = container.getBoundingClientRect();
-            State.containerStartPos.x = rect.left;
-            State.containerStartPos.y = rect.top;
+            State.containerStart = { x: rect.left, y: rect.top };
 
-            // Thêm style khi đang kéo
             container.style.transition = 'none';
             container.style.opacity = '0.8';
-            container.style.zIndex = '9999';
             container.classList.add('yt-sub-dragging');
 
-            // Thêm sự kiện cho toàn document - sử dụng handler đã bind
-            document.addEventListener('mousemove', this._boundHandlers.onDragMove);
-            document.addEventListener('mouseup', this._boundHandlers.onDragEnd);
+            document.addEventListener(isTouch ? 'touchmove' : 'mousemove', this._handlers.move, { passive: false });
+            document.addEventListener(isTouch ? 'touchend' : 'mouseup', this._handlers.end);
+            if (isTouch) document.addEventListener('touchcancel', this._handlers.end);
         },
 
-        onDragStartTouch(e) {
-            if (e.touches.length !== 1) return;
-
-            const container = this._currentContainer || $(SELECTORS.subtitleContainer);
-            if (!container) return;
-
-            // Cho phép kéo cả khi touch vào text
-            // Chỉ chặn nếu đang select text
-            if (window.getSelection()?.toString()) {
-                return;
-            }
-
+        onMove(e) {
+            if (!State.isDragging) return;
             e.preventDefault();
-            e.stopPropagation();
 
-            State.isDragging = true;
-
-            // Lưu vị trí bắt đầu từ touch
-            State.dragStartPos.x = e.touches[0].clientX;
-            State.dragStartPos.y = e.touches[0].clientY;
-
-            const rect = container.getBoundingClientRect();
-            State.containerStartPos.x = rect.left;
-            State.containerStartPos.y = rect.top;
-
-            // Thêm style khi đang kéo
-            container.style.transition = 'none';
-            container.style.opacity = '0.8';
-            container.style.zIndex = '9999';
-            container.classList.add('yt-sub-dragging');
-
-            // Thêm sự kiện touch - sử dụng handler đã bind
-            document.addEventListener('touchmove', this._boundHandlers.onDragMoveTouch, { passive: false });
-            document.addEventListener('touchend', this._boundHandlers.onDragEnd);
-            document.addEventListener('touchcancel', this._boundHandlers.onDragEnd);
-        },
-
-        // Hàm xử lý drag chung cho cả mouse và touch
-        handleDragMove(clientX, clientY) {
-            const container = $(SELECTORS.subtitleContainer);
+            const container = $(SEL.container);
             if (!container) return;
 
-            const deltaX = clientX - State.dragStartPos.x;
-            const deltaY = clientY - State.dragStartPos.y;
+            const isTouch = e.type === 'touchmove';
+            if (isTouch && e.touches.length !== 1) return;
+
+            const point = isTouch ? e.touches[0] : e;
+            const deltaX = point.clientX - State.dragStart.x;
+            const deltaY = point.clientY - State.dragStart.y;
 
             const maxX = window.innerWidth - container.offsetWidth;
             const maxY = window.innerHeight - container.offsetHeight;
+            const newX = Math.max(0, Math.min(State.containerStart.x + deltaX, maxX));
+            const newY = Math.max(0, Math.min(State.containerStart.y + deltaY, maxY));
 
-            const newX = Math.max(0, Math.min(State.containerStartPos.x + deltaX, maxX));
-            const newY = Math.max(0, Math.min(State.containerStartPos.y + deltaY, maxY));
-
-            // Xác định canh lề và áp dụng vị trí
             const alignment = newX > maxX * 0.7 ? 'right' : newX < maxX * 0.3 ? 'left' : 'center';
-
             container.style.left = alignment === 'right' ? 'auto' : newX + 'px';
             container.style.right = alignment === 'right' ? (window.innerWidth - newX - container.offsetWidth) + 'px' : 'auto';
             container.style.top = newY + 'px';
             container.style.bottom = 'auto';
             container.style.transform = 'none';
 
-            State.currentDragPos = { x: newX, y: newY, alignment };
+            container._dragPos = { x: newX, y: newY, alignment };
         },
 
-        onDragMove(e) {
-            if (!State.isDragging) return;
-            e.preventDefault();
-            e.stopPropagation();
-            this.handleDragMove(e.clientX, e.clientY);
-        },
-
-        onDragMoveTouch(e) {
-            if (!State.isDragging || e.touches.length !== 1) return;
-            e.preventDefault();
-            e.stopPropagation();
-            this.handleDragMove(e.touches[0].clientX, e.touches[0].clientY);
-        },
-
-        onDragEnd(e) {
+        onEnd() {
             if (!State.isDragging) return;
 
-            // Chỉ preventDefault nếu event tồn tại và có method này
-            if (e && e.preventDefault) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-
-            const container = this._currentContainer || $(SELECTORS.subtitleContainer);
+            const container = $(SEL.container);
             if (container) {
-                // Xóa style kéo
                 container.style.transition = '';
                 container.style.opacity = '';
-                container.style.zIndex = '';
                 container.classList.remove('yt-sub-dragging');
+
+                if (container._dragPos) {
+                    const { x, y, alignment } = container._dragPos;
+                    Settings.savePosition(x + 'px', y + 'px', alignment);
+                    delete container._dragPos;
+                }
             }
 
-            // Lưu vị trí vào cài đặt
-            if (State.currentDragPos) {
-                const pos = State.currentDragPos;
-                Settings.saveContainerPosition(pos.x + 'px', pos.y + 'px', pos.alignment);
-            }
-
-            // Reset state
             State.isDragging = false;
-            State.currentDragPos = null;
-
-            // Xóa sự kiện - sử dụng handler đã bind
-            if (this._boundHandlers) {
-                document.removeEventListener('mousemove', this._boundHandlers.onDragMove);
-                document.removeEventListener('mouseup', this._boundHandlers.onDragEnd);
-                document.removeEventListener('touchmove', this._boundHandlers.onDragMoveTouch);
-                document.removeEventListener('touchend', this._boundHandlers.onDragEnd);
-                document.removeEventListener('touchcancel', this._boundHandlers.onDragEnd);
-            }
+            ['mousemove', 'mouseup', 'touchmove', 'touchend', 'touchcancel'].forEach(evt =>
+                document.removeEventListener(evt, this._handlers[evt.includes('move') ? 'move' : 'end'])
+            );
         },
 
-        applySavedPosition(container) {
+        applyPosition(container) {
             if (!container) return;
-
             const pos = Settings.get('containerPosition');
-            const alignment = Settings.get('containerAlignment');
+            const align = Settings.get('containerAlignment');
 
-            if (pos && pos.x && pos.y) {
-                // Áp dụng vị trí đã lưu
-                if (alignment === 'right') {
-                    container.style.right = pos.x;
-                    container.style.left = 'auto';
-                } else if (alignment === 'center') {
-                    container.style.left = '50%';
-                    container.style.right = 'auto';
-                    container.style.transform = 'translateX(-50%)';
-                } else {
-                    container.style.left = pos.x;
-                    container.style.right = 'auto';
-                }
-
-                if (pos.y.includes('%')) {
-                    container.style.top = 'auto';
-                    container.style.bottom = pos.y;
-                } else {
-                    container.style.top = pos.y;
-                    container.style.bottom = 'auto';
-                }
+            if (pos?.x && pos?.y) {
+                container.style.left = align === 'right' ? 'auto' : align === 'center' ? '50%' : pos.x;
+                container.style.right = align === 'right' ? pos.x : 'auto';
+                container.style.transform = align === 'center' ? 'translateX(-50%)' : 'none';
+                container.style.top = pos.y.includes('%') ? 'auto' : pos.y;
+                container.style.bottom = pos.y.includes('%') ? pos.y : 'auto';
             } else {
-                // Vị trí mặc định
-                container.style.left = '5%';
-                container.style.bottom = '70px';
-                container.style.top = 'auto';
-                container.style.right = 'auto';
+                this.reset(container);
             }
         },
 
-        resetPosition(container) {
+        reset(container) {
             if (!container) return;
-
-            // Reset về vị trí mặc định
-            container.style.left = '5%';
-            container.style.bottom = '70px';
-            container.style.top = 'auto';
-            container.style.right = 'auto';
-            container.style.transform = 'none';
-
-            // Xóa vị trí đã lưu
-            Settings.saveContainerPosition('5%', '70px', 'left');
+            Object.assign(container.style, { left: '5%', bottom: '70px', top: 'auto', right: 'auto', transform: 'none' });
+            Settings.savePosition('5%', '70px', 'left');
         }
     };
 
@@ -373,10 +236,9 @@
             }
 
             const s = Settings.current;
-            const hideOriginal = s.displayMode === 'compact' && !s.showOriginal;
+            const hideOrig = s.displayMode === 'compact' && !s.showOriginal;
 
             el.textContent = `
-                /* Buttons */
                 .ytp-translate-button, .ytp-subtitle-settings-button {
                     position: relative; width: 48px; height: 100%;
                     display: inline-flex !important; align-items: center; justify-content: center;
@@ -387,74 +249,37 @@
                 .ytp-translate-button.active { opacity: 1; color: #1c87eb; }
                 .ytp-translate-button.active svg { fill: #189aeb; }
 
-                /* Hide YouTube captions when translating */
                 .yt-translating .ytp-caption-window-container,
                 .yt-translating .caption-window {
-                    opacity: 0 !important;
-                    visibility: hidden !important;
-                    pointer-events: none !important;
-                    display: none !important;
+                    opacity: 0 !important; visibility: hidden !important;
+                    pointer-events: none !important; display: none !important;
                 }
 
-                /* Unified bilingual subtitle container */
                 #yt-bilingual-subtitles {
-                    display: inline-flex !important;
-                    flex-direction: column !important;
-                    align-items: flex-start !important;
-                    visibility: visible !important; opacity: 1 !important;
-                    position: fixed !important;
-                    padding: 8px 12px !important;
-                    background: rgba(8,8,8,0.85) !important; 
-                    border-radius: 6px !important;
-                    border: none !important;
-                    max-width: 90% !important;
-                    min-width: 200px !important;
-                    text-align: left !important; 
-                    z-index: 9998 !important;
-                    pointer-events: auto !important;
-                    gap: 4px !important;
-                    cursor: move !important;
-                    user-select: none !important;
-                    transition: opacity 0.2s, transform 0.2s !important;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
-                    backdrop-filter: blur(4px) !important;
+                    display: inline-flex !important; flex-direction: column !important;
+                    align-items: flex-start !important; position: fixed !important;
+                    padding: 8px 12px !important; background: rgba(8,8,8,0.85) !important;
+                    border-radius: 6px !important; max-width: 90% !important; min-width: 200px !important;
+                    z-index: 9998 !important; gap: 4px !important; cursor: move !important;
+                    user-select: none !important; box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+                    backdrop-filter: blur(4px) !important; transition: opacity 0.2s, transform 0.2s !important;
                 }
-                
-                /* Hiệu ứng khi hover */
-                #yt-bilingual-subtitles:hover {
-                    background: rgba(15,15,15,0.9) !important;
-                }
-                
-                /* Hiệu ứng khi đang kéo */
+                #yt-bilingual-subtitles:hover { background: rgba(15,15,15,0.9) !important; }
                 #yt-bilingual-subtitles.yt-sub-dragging {
-                    opacity: 0.8 !important;
-                    box-shadow: 0 6px 20px rgba(0,0,0,0.4) !important;
-                    z-index: 9999 !important;
+                    opacity: 0.8 !important; box-shadow: 0 6px 20px rgba(0,0,0,0.4) !important; z-index: 9999 !important;
                 }
-                
                 #yt-bilingual-subtitles .sub-original {
-                    color: ${s.originalColor} !important;
-                    font-size: ${s.fontSize}px !important;
-                    text-shadow: 1px 1px 3px rgba(0,0,0,0.9) !important;
-                    white-space: normal !important;
-                    word-wrap: break-word !important;
-                    overflow-wrap: break-word !important;
-                    max-width: 100% !important;
-                    line-height: 1.3 !important;
-                    ${hideOriginal ? 'display: none !important;' : ''}
+                    color: ${s.originalColor} !important; font-size: ${s.fontSize}px !important;
+                    text-shadow: 1px 1px 3px rgba(0,0,0,0.9) !important; line-height: 1.3 !important;
+                    white-space: normal !important; word-wrap: break-word !important; max-width: 100% !important;
+                    ${hideOrig ? 'display: none !important;' : ''}
                 }
                 #yt-bilingual-subtitles .sub-translated {
-                    color: ${s.translatedColor} !important;
-                    font-size: ${s.translatedFontSize}px !important;
-                    text-shadow: 1px 1px 3px rgba(0,0,0,0.9) !important;
-                    white-space: normal !important;
-                    word-wrap: break-word !important;
-                    overflow-wrap: break-word !important;
-                    max-width: 100% !important;
-                    line-height: 1.3 !important;
+                    color: ${s.translatedColor} !important; font-size: ${s.translatedFontSize}px !important;
+                    text-shadow: 1px 1px 3px rgba(0,0,0,0.9) !important; line-height: 1.3 !important;
+                    white-space: normal !important; word-wrap: break-word !important; max-width: 100% !important;
                 }
 
-                /* Settings panel */
                 #yt-subtitle-settings {
                     position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
                     background: rgba(28,28,28,0.95); border-radius: 12px; padding: 20px;
@@ -494,40 +319,28 @@
                     background: #fff; border-radius: 50%; top: 2px; left: 2px; transition: left 0.2s;
                 }
                 #yt-subtitle-settings .toggle.active::after { left: 22px; }
-                
-                /* Nút reset vị trí trong settings */
                 #yt-subtitle-settings .reset-position-btn {
-                    background: #555; color: #fff; border: none;
-                    border-radius: 4px; padding: 6px 12px;
-                    cursor: pointer; font-size: 13px;
-                    margin-top: 8px; width: 100%;
-                    transition: background 0.2s;
+                    background: #555; color: #fff; border: none; border-radius: 4px;
+                    padding: 6px 12px; cursor: pointer; font-size: 13px;
+                    margin-top: 8px; width: 100%; transition: background 0.2s;
                 }
-                #yt-subtitle-settings .reset-position-btn:hover {
-                    background: #666;
-                }
+                #yt-subtitle-settings .reset-position-btn:hover { background: #666; }
             `;
         }
     };
 
     // ==================== TRANSLATION ====================
     const Translation = {
-        // Regex để phát hiện kết thúc câu
-        SENTENCE_END: /[.!?;:。！？；：]\s*$/,
-
         async translate(text) {
             if (!text?.trim()) return '';
             const key = text.trim();
-
             if (State.cache.has(key)) return State.cache.get(key);
 
             try {
                 const url = `${CONFIG.TRANSLATE_API}?client=gtx&sl=auto&tl=${Settings.get('targetLang')}&dt=t&q=${encodeURIComponent(text)}`;
-                const res = await fetch(url);
-                const data = await res.json();
+                const data = await (await fetch(url)).json();
                 const translated = data?.[0]?.map(i => i[0]).join('') || '';
 
-                // Cache with limit
                 if (State.cache.size >= CONFIG.CACHE_LIMIT) {
                     State.cache.delete(State.cache.keys().next().value);
                 }
@@ -539,45 +352,44 @@
             }
         },
 
-        isCompleteSentence(text) {
-            return this.SENTENCE_END.test(text.trim());
-        },
-
         async process() {
-            const segments = $$(SELECTORS.captionSegment);
-            if (!segments.length) {
-                // Reset buffer khi không có caption
-                State.lastRawText = '';
-                State.pendingText = '';
+            const captionWindows = $$('.caption-window');
+            if (!captionWindows.length) {
+                State.lastRawText = State.lastStableText = '';
                 return this.removeContainer();
             }
 
-            const currentText = Array.from(segments)
-                .map(s => s.textContent.trim())
-                .filter(Boolean)
-                .join(' ');
+            const segments = $$(SEL.captionSegment, captionWindows[captionWindows.length - 1]);
+            if (!segments.length) {
+                State.lastRawText = State.lastStableText = '';
+                return this.removeContainer();
+            }
 
+            let currentText = Array.from(segments).map(s => s.textContent.trim()).filter(Boolean).join(' ').trim();
             if (!currentText) return this.removeContainer();
-
             if (currentText === State.lastRawText) return;
 
+            // Chỉ lấy câu cuối nếu có nhiều câu
+            const sentences = currentText.split(/(?<=[.!?。！？])\s+/);
+            if (sentences.length > 1) {
+                const last = sentences[sentences.length - 1];
+                currentText = last.length >= CONFIG.MIN_TEXT_LENGTH ? last : sentences.slice(-2).join(' ');
+            }
+
+            if (State.lastStableText && !currentText.includes(State.lastStableText.substring(0, 15)) &&
+                !State.lastStableText.includes(currentText.substring(0, 15))) State.lastStableText = '';
+
             State.lastRawText = currentText;
-            State.pendingText = currentText;
             clearTimeout(State.sentenceTimeout);
 
-            const shouldTranslateNow =
-                this.isCompleteSentence(currentText) ||
-                (currentText.length >= CONFIG.MIN_TEXT_LENGTH &&
-                    currentText !== State.lastStableText &&
-                    State.cache.has(currentText.trim()));
+            const shouldTranslateNow = CONFIG.SENTENCE_END.test(currentText) ||
+                (currentText.length >= CONFIG.MIN_TEXT_LENGTH && currentText !== State.lastStableText && State.cache.has(currentText.trim()));
 
             if (shouldTranslateNow) {
                 await this.translateAndShow(currentText);
             } else {
                 State.sentenceTimeout = setTimeout(async () => {
-                    if (State.pendingText === currentText &&
-                        currentText !== State.lastStableText &&
-                        currentText.length >= CONFIG.MIN_TEXT_LENGTH) {
+                    if (State.lastRawText === currentText && currentText !== State.lastStableText && currentText.length >= CONFIG.MIN_TEXT_LENGTH) {
                         await this.translateAndShow(currentText);
                     }
                 }, CONFIG.SENTENCE_STABLE_MS);
@@ -587,7 +399,7 @@
         async translateAndShow(text) {
             if (!text || text === State.lastStableText) return;
 
-            const container = $(SELECTORS.subtitleContainer);
+            const container = $(SEL.container);
             if (container?.dataset.source === text) return;
 
             const translated = await this.translate(text);
@@ -598,19 +410,16 @@
         },
 
         updateContainer(original, translated) {
-            const player = $(SELECTORS.player);
+            const player = $(SEL.player);
             if (!player) return;
 
-            let container = $(SELECTORS.subtitleContainer);
+            let container = $(SEL.container);
             if (!container) {
                 container = document.createElement('div');
                 container.id = 'yt-bilingual-subtitles';
-                container.innerHTML = safeHTML(`
-                    <div class="sub-original"></div>
-                    <div class="sub-translated"></div>
-                `);
+                container.innerHTML = safeHTML(`<div class="sub-original"></div><div class="sub-translated"></div>`);
                 document.body.appendChild(container);
-                DragManager.init(container);
+                Drag.init(container);
             }
 
             container.querySelector('.sub-original').textContent = original;
@@ -619,26 +428,15 @@
             player.classList.add('yt-translating');
         },
 
-        removeContainer(forceRemoveClass = false) {
-            const container = $(SELECTORS.subtitleContainer);
-            if (container) {
-                container.remove();
-            }
-
-            // Reset stable text khi remove container
+        removeContainer(forceRemove = false) {
+            $(SEL.container)?.remove();
             State.lastStableText = '';
-
-            // Chỉ xóa class khi tắt dịch hoàn toàn, không xóa khi caption tạm thời mất
-            if (forceRemoveClass) {
-                document.querySelectorAll('.yt-translating').forEach(el => el.classList.remove('yt-translating'));
-            }
+            if (forceRemove) $$('.yt-translating').forEach(el => el.classList.remove('yt-translating'));
         },
 
         debouncedProcess() {
             clearTimeout(State.processTimeout);
-            State.processTimeout = setTimeout(() => {
-                if (State.translateEnabled) this.process();
-            }, CONFIG.DEBOUNCE_MS);
+            State.processTimeout = setTimeout(() => State.enabled && this.process(), CONFIG.DEBOUNCE_MS);
         }
     };
 
@@ -646,16 +444,10 @@
     const Observer = {
         start() {
             if (State.observer) return;
-            State.observer = new MutationObserver(() => {
-                if (State.translateEnabled) Translation.debouncedProcess();
-            });
+            State.observer = new MutationObserver(() => State.enabled && Translation.debouncedProcess());
             State.observer.observe(document.body, { childList: true, subtree: true, characterData: true });
         },
-
-        stop() {
-            State.observer?.disconnect();
-            State.observer = null;
-        }
+        stop() { State.observer?.disconnect(); State.observer = null; }
     };
 
     // ==================== UI ====================
@@ -670,16 +462,16 @@
         },
 
         addButtons() {
-            const controls = $(SELECTORS.controls);
+            const controls = $(SEL.controls);
             if (!controls) return;
 
-            if (!$(SELECTORS.settingsBtn)) {
+            if (!$(SEL.settingsBtn)) {
                 controls.insertBefore(
                     this.createButton('ytp-subtitle-settings-button', 'Cài đặt phụ đề', ICONS.settings, () => this.showSettings()),
                     controls.firstChild
                 );
             }
-            if (!$(SELECTORS.translateBtn)) {
+            if (!$(SEL.translateBtn)) {
                 controls.insertBefore(
                     this.createButton('ytp-translate-button', 'Dịch phụ đề (T)', ICONS.translate, () => this.toggleTranslation()),
                     controls.firstChild
@@ -688,26 +480,26 @@
         },
 
         toggleTranslation() {
-            State.translateEnabled = !State.translateEnabled;
-            const btn = $(SELECTORS.translateBtn);
+            State.enabled = !State.enabled;
+            const btn = $(SEL.translateBtn);
 
             if (btn) {
-                btn.classList.toggle('active', State.translateEnabled);
-                btn.innerHTML = safeHTML(State.translateEnabled ? ICONS.translateActive : ICONS.translate);
-                btn.title = State.translateEnabled ? 'Tắt dịch (T)' : 'Dịch phụ đề (T)';
+                btn.classList.toggle('active', State.enabled);
+                btn.innerHTML = safeHTML(State.enabled ? ICONS.translateActive : ICONS.translate);
+                btn.title = State.enabled ? 'Tắt dịch (T)' : 'Dịch phụ đề (T)';
             }
 
-            if (State.translateEnabled) {
+            if (State.enabled) {
                 Observer.start();
                 Translation.debouncedProcess();
             } else {
                 Observer.stop();
-                Translation.removeContainer(true); // Force remove class khi tắt dịch
+                Translation.removeContainer(true);
             }
         },
 
         showSettings() {
-            if ($(SELECTORS.settingsPanel)) return;
+            if ($(SEL.settingsPanel)) return;
             const s = Settings.current;
 
             const panel = document.createElement('div');
@@ -736,7 +528,6 @@
             `);
             document.body.appendChild(panel);
 
-            // Event handlers
             const bind = (id, event, handler) => panel.querySelector(id)[event] = handler;
             bind('.close-btn', 'onclick', () => panel.remove());
             bind('#s-fontsize', 'oninput', (e) => {
@@ -755,15 +546,13 @@
                 e.target.classList.toggle('active', Settings.get('showOriginal'));
             });
             bind('#s-reset-pos', 'onclick', () => {
-                const container = $(SELECTORS.subtitleContainer);
-                DragManager.resetPosition(container);
+                Drag.reset($(SEL.container));
                 panel.remove();
             });
 
-            // Close on outside click
             setTimeout(() => {
                 const handler = (e) => {
-                    if (!panel.contains(e.target) && !e.target.closest(SELECTORS.settingsBtn)) {
+                    if (!panel.contains(e.target) && !e.target.closest(SEL.settingsBtn)) {
                         panel.remove();
                         document.removeEventListener('click', handler);
                     }
@@ -774,7 +563,7 @@
 
         handleFullscreen() {
             const isFS = document.fullscreenElement || document.webkitFullscreenElement;
-            [$(SELECTORS.translateBtn), $(SELECTORS.settingsBtn)].forEach(btn => {
+            [$(SEL.translateBtn), $(SEL.settingsBtn)].forEach(btn => {
                 if (btn) btn.style.bottom = isFS ? '2px' : '0';
             });
         }
@@ -786,13 +575,13 @@
         Settings.load();
         Styles.update();
         UI.addButtons();
-        if (State.translateEnabled) Observer.start();
+        if (State.enabled) Observer.start();
     }
 
     function cleanup() {
         Observer.stop();
         Translation.removeContainer();
-        State.translateEnabled = false;
+        State.enabled = false;
     }
 
     // ==================== EVENT LISTENERS ====================
@@ -802,41 +591,28 @@
     document.addEventListener('keydown', (e) => {
         const active = document.activeElement;
         if (active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA' || active?.isContentEditable) return;
-        if (e.key.toLowerCase() === 't' && !e.ctrlKey && !e.altKey && !e.metaKey && $(SELECTORS.video)) {
+        if (e.key.toLowerCase() === 't' && !e.ctrlKey && !e.altKey && !e.metaKey && $(SEL.video)) {
             e.preventDefault();
             UI.toggleTranslation();
         }
     });
 
-    // Xử lý resize window để cập nhật vị trí container
     window.addEventListener('resize', () => {
-        const container = $(SELECTORS.subtitleContainer);
-        if (container) {
-            // Đảm bảo container không ra ngoài màn hình khi resize
-            const rect = container.getBoundingClientRect();
-            if (rect.left < 0) container.style.left = '0px';
-            if (rect.top < 0) container.style.top = '0px';
-            if (rect.right > window.innerWidth) {
-                container.style.left = (window.innerWidth - container.offsetWidth) + 'px';
-            }
-            if (rect.bottom > window.innerHeight) {
-                container.style.top = (window.innerHeight - container.offsetHeight) + 'px';
-            }
-        }
+        const container = $(SEL.container);
+        if (!container) return;
+        const rect = container.getBoundingClientRect();
+        if (rect.left < 0) container.style.left = '0px';
+        if (rect.top < 0) container.style.top = '0px';
+        if (rect.right > window.innerWidth) container.style.left = (window.innerWidth - container.offsetWidth) + 'px';
+        if (rect.bottom > window.innerHeight) container.style.top = (window.innerHeight - container.offsetHeight) + 'px';
     });
 
-    // Wait for YouTube player controls
     const waitForControls = () => {
-        if ($(SELECTORS.controls)) return init();
-
+        if ($(SEL.controls)) return init();
         let retries = 0;
         const observer = new MutationObserver(() => {
-            if ($(SELECTORS.controls)) {
-                observer.disconnect();
-                init();
-            } else if (++retries > 50) {
-                observer.disconnect();
-            }
+            if ($(SEL.controls)) { observer.disconnect(); init(); }
+            else if (++retries > 50) observer.disconnect();
         });
         observer.observe(document.documentElement, { childList: true, subtree: true });
     };
