@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gestures
 // @namespace    gestures
-// @version      4.2.1
+// @version      4.2.2
 // @description  Long-press/Right-click mở link, Double-tap đóng tab, Edge swipe scroll, Pager
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
@@ -336,7 +336,7 @@ const initEvents = () => {
     }, true);
     window.addEventListener('touchcancel', () => { State.edge.active = false; State.dblTap.last = null; }, true);
 
-    // Pager
+    // Pager - chỉ navigate sau khi dừng cuộn
     window.addEventListener('wheel', e => {
         if (!CFG.pager.enabled || e.shiftKey || Math.abs(e.deltaX) < Math.abs(e.deltaY) || Math.abs(e.deltaX) < 10) return;
         let el = e.target;
@@ -351,8 +351,12 @@ const initEvents = () => {
             wheelHops = dir !== wheelDir ? 1 : wheelHops + 1;
             wheelDir = dir; wheelAcc = 0;
             clearTimeout(wheelTimer);
-            wheelTimer = setTimeout(() => { wheelDir = 0; wheelHops = 0; }, CFG.pager.window);
-            if (wheelHops >= CFG.pager.hops) { goPage(dir, true); wheelHops = 0; } else goPage(dir, false);
+            // Chờ dừng cuộn rồi mới navigate
+            wheelTimer = setTimeout(() => {
+                const isMax = wheelHops >= CFG.pager.hops;
+                goPage(wheelDir, isMax);
+                wheelDir = 0; wheelHops = 0;
+            }, 300); // 300ms sau khi ngừng cuộn
         }
     }, { passive: true });
 
