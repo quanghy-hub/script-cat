@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Translate
 // @namespace    translate
-// @version      2.6.4
+// @version      2.7.0
 // @description  Swipe/hotkey translate. Video safe zone. Optimized for mobile.
 // @author       you
 // @match        http://*/*
@@ -45,6 +45,14 @@
   `;
   document.head.appendChild(sty);
 
+  /** Update CSS variables without reloading */
+  function applyCSSVars() {
+    const r = document.documentElement.style;
+    r.setProperty('--ilt-fs', cfg.fontScale + 'em');
+    r.setProperty('--ilt-fg', cfg.mutedColor);
+    r.setProperty('--ilt-bg', cfg.bgBlend);
+  }
+
   /* ================= TEXT DETECTION ================= */
   const isReddit = location.hostname.includes('reddit.com');
   const R_DEEP = ['div[id$="-post-rtjson-content"]', '.md', '[data-post-click-location="text-body"] > div', '[slot="text-body"] div', '[slot="text-body"]'];
@@ -81,7 +89,16 @@
       if (cur.style.display === 'none') { cur = cur.parentElement; continue; }
       const txt = (cur.innerText || '').trim();
       if (VALID_TAGS.test(cur.tagName) && txt.length > 0 && txt.length < 5000) {
-        if (cur.tagName === 'DIV' && txt.length > 500 && cur.children.length > 5) { cur = cur.parentElement; continue; }
+        // Large DIV with many children → find closest smaller child instead of going up
+        if (cur.tagName === 'DIV' && txt.length > 500 && cur.children.length > 5) {
+          const child = [...cur.children].find(c => {
+            const ct = (c.innerText || '').trim();
+            return VALID_TAGS.test(c.tagName) && ct.length > 0 && ct.length < 500;
+          });
+          if (child) return { t: child.innerText.trim(), n: child };
+          // No suitable child → just use current text (capped)
+          return { t: txt.slice(0, 2000), n: cur };
+        }
         return { t: txt, n: cur };
       }
       cur = cur.parentElement;
@@ -100,11 +117,20 @@
   }
 
   /* ================= TRANSLATION ================= */
-  const cache = new Map();
+  const CACHE_MAX = 200;
+  const cache = new Map(); // key: text → value: { result, ts }
   const JUNK = /[\s\d\p{P}\p{S}\p{M}\p{C}\u200B-\u200D\uFEFF]/gu;
   const hasMeaningful = txt => txt.replace(JUNK, '').length > 0;
   const cleanJunk = txt => txt.replace(/^[\s\p{P}\p{S}]+|[\s\p{P}\p{S}]+$/gmu, '').replace(/\n{3,}/g, '\n\n').trim();
-  const parseGT = r => r[0].map(x => x[0]).join('');
+  const parseGT = r => r?.[0]?.map(x => x[0]).join('') || '';
+
+  /** Evict oldest entries when cache exceeds max size */
+  function trimCache() {
+    if (cache.size <= CACHE_MAX) return;
+    const sorted = [...cache.entries()].sort((a, b) => a[1].ts - b[1].ts);
+    const toDelete = sorted.slice(0, cache.size - CACHE_MAX);
+    for (const [k] of toDelete) cache.delete(k);
+  }
 
   async function trans(txt, node) {
     // Toggle: remove existing translation
@@ -114,40 +140,86 @@
     }
     // Skip: toàn ký tự vô nghĩa
     if (!hasMeaningful(txt)) return;
-    // Dedupe
-    if (Date.now() - (cache.get(txt) || 0) < cfg.dedupeSeconds * 1000) return;
-    cache.set(txt, Date.now());
+
+    // Check real cache (return cached result instantly)
+    const cached = cache.get(txt);
+    if (cached?.result) {
+      // Dedupe: tránh spam cùng text quá nhanh
+      if (Date.now() - cached.ts < cfg.dedupeSeconds * 1000) return;
+      cached.ts = Date.now();
+      renderTranslation(node, cached.result);
+      return;
+    }
+
+    // Dedupe for pending requests
+    if (cached && Date.now() - cached.ts < cfg.dedupeSeconds * 1000) return;
+    cache.set(txt, { result: null, ts: Date.now() });
 
     const w = document.createElement('div');
     w.className = 'ilt-trans-container';
-    w.innerHTML = `<div class="ilt-trans"><div class="ilt-meta">...</div></div>`;
+    w.innerHTML = `<div class="ilt-trans"><div class="ilt-meta">…</div></div>`;
     node.parentNode.insertBefore(w, node.nextSibling);
 
     try {
       let res;
       if (cfg.provider === 'gemini' && cfg.geminiKey) {
         const lang = /[àáảãạăằắẳẵặâầấẩẫậ]/.test(txt) ? 'English' : 'Vietnamese';
-        res = await new Promise((ok, err) => GM_xmlhttpRequest({
+        res = await new Promise((ok, fail) => GM_xmlhttpRequest({
           method: 'POST',
           url: `https://generativelanguage.googleapis.com/v1beta/models/${cfg.geminiModel}:generateContent?key=${cfg.geminiKey}`,
           headers: { 'Content-Type': 'application/json' },
           data: JSON.stringify({ contents: [{ parts: [{ text: `Translate to ${lang}:\n${txt}` }] }] }),
-          onload: e => { try { ok(JSON.parse(e.responseText).candidates[0].content.parts[0].text.trim()); } catch (x) { err(x); } },
-          onerror: err
+          onload: e => {
+            try {
+              const data = JSON.parse(e.responseText);
+              const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+              if (text) ok(text);
+              else fail(new Error('Empty Gemini response: ' + e.responseText.slice(0, 200)));
+            } catch (x) { fail(x); }
+          },
+          onerror: e => fail(new Error('Gemini network error'))
         }));
       } else {
         const gtUrl = tl => `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${tl}&dt=t&q=${encodeURIComponent(txt)}`;
-        const gtReq = tl => new Promise(ok => GM_xmlhttpRequest({ method: 'GET', url: gtUrl(tl), onload: e => ok(JSON.parse(e.responseText)) }));
+        const gtReq = tl => new Promise((ok, fail) => GM_xmlhttpRequest({
+          method: 'GET', url: gtUrl(tl),
+          onload: e => { try { ok(JSON.parse(e.responseText)); } catch (x) { fail(x); } },
+          onerror: () => fail(new Error('Google Translate network error'))
+        }));
         const r1 = await gtReq('vi');
-        res = r1[2] === 'vi' ? parseGT(await gtReq('en')) : parseGT(r1);
+        res = r1?.[2] === 'vi' ? parseGT(await gtReq('en')) : parseGT(r1);
       }
       const cleaned = cleanJunk(res);
       if (!cleaned) { w.remove(); return; }
-      w.firstChild.innerHTML = `<div class="ilt-txt">${cleaned.replace(/[&<]/g, c => ({ '&': '&amp;', '<': '&lt;' }[c]))}</div>`;
-    } catch {
-      w.innerText = 'Err';
+
+      // Cache the result
+      cache.set(txt, { result: cleaned, ts: Date.now() });
+      trimCache();
+
+      // Render safely with textContent
+      const div = document.createElement('div');
+      div.className = 'ilt-txt';
+      div.textContent = cleaned;
+      w.firstChild.replaceChildren(div);
+    } catch (e) {
+      console.error('[Translate]', e);
+      w.textContent = 'Err';
       setTimeout(() => w.remove(), 2000);
     }
+  }
+
+  /** Render cached translation result */
+  function renderTranslation(node, text) {
+    const w = document.createElement('div');
+    w.className = 'ilt-trans-container';
+    const inner = document.createElement('div');
+    inner.className = 'ilt-trans';
+    const txt = document.createElement('div');
+    txt.className = 'ilt-txt';
+    txt.textContent = text;
+    inner.appendChild(txt);
+    w.appendChild(inner);
+    node.parentNode.insertBefore(w, node.nextSibling);
   }
 
   function act(x, y) {
@@ -209,6 +281,7 @@
       <div class="ilt-row"><label>Vuốt</label><select id="ps"><option value="both">Cả hai</option><option value="right">Sang phải</option><option value="left">Sang trái</option><option value="none">Tắt</option></select></div>
       <div class="ilt-row"><label>Cỡ chữ</label><input id="pfs" type="number" step="0.05" min="0.5" max="2" style="width:60px"></div>
       <div class="ilt-row"><label>Màu chữ</label><input id="pc" type="color"></div>
+      <div class="ilt-row"><label>Model</label><input id="pmd" type="text" placeholder="gemini-1.5-flash" style="width:100%"></div>
       <div class="ilt-row"><input id="pk" type="password" placeholder="Gemini API Key" style="width:100%"></div>
       <button class="ilt-btn" id="sv">Lưu & Áp dụng</button>
     `;
@@ -219,6 +292,7 @@
     $('#ph').value = cfg.hotkey;
     $('#ps').value = cfg.swipeEnabled ? cfg.swipeDir : 'none';
     $('#pk').value = cfg.geminiKey;
+    $('#pmd').value = cfg.geminiModel;
     $('#pfs').value = cfg.fontScale;
     $('#pc').value = cfg.mutedColor;
 
@@ -226,6 +300,7 @@
       cfg.provider = $('#pm').value;
       cfg.hotkey = $('#ph').value;
       cfg.geminiKey = $('#pk').value;
+      cfg.geminiModel = $('#pmd').value.trim() || 'gemini-1.5-flash';
       cfg.fontScale = parseFloat($('#pfs').value) || 0.95;
       cfg.mutedColor = $('#pc').value;
 
@@ -234,8 +309,8 @@
       if (s !== 'none') cfg.swipeDir = s;
 
       save();
+      applyCSSVars(); // Realtime update — no reload needed
       p.remove();
-      alert('Đã lưu! Tải lại trang để cập nhật màu và cỡ chữ.');
     };
 
     p.onclick = e => { if (e.target === p) p.remove(); };
