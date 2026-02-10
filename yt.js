@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YSub
 // @namespace    yt
-// @version      2.9.8
+// @version      2.9.9
 // @description  Bilingual Subtitles with Settings and Drag Support
 // @match        https://www.youtube.com/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/yt.js
@@ -103,7 +103,8 @@
         dragStart: { x: 0, y: 0 },
         containerStart: { x: 0, y: 0 },
         lastRawText: '',
-        lastStableText: ''
+        lastStableText: '',
+        settingsClickHandler: null
     };
 
     // ==================== DRAG MANAGER ====================
@@ -339,7 +340,9 @@
 
             try {
                 const url = `${CONFIG.TRANSLATE_API}?client=gtx&sl=auto&tl=${Settings.get('targetLang')}&dt=t&q=${encodeURIComponent(text)}`;
-                const data = await (await fetch(url)).json();
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
                 const translated = data?.[0]?.map(i => i[0]).join('') || '';
 
                 if (State.cache.size >= CONFIG.CACHE_LIMIT) {
@@ -356,49 +359,45 @@
         async process() {
             const captionWindows = $$('.caption-window');
             if (!captionWindows.length) {
-                State.lastRawText = State.lastStableText = '';
+                State.lastRawText = '';
                 return this.removeContainer();
             }
 
-            const segments = $$(SEL.captionSegment, captionWindows[captionWindows.length - 1]);
-            if (!segments.length) {
-                State.lastRawText = State.lastStableText = '';
-                return this.removeContainer();
+            const lastWindow = captionWindows[captionWindows.length - 1];
+
+            // Chỉ lấy dòng cuối cùng (caption-visual-line cuối) — dòng mới nhất YouTube đang hiện
+            const lines = lastWindow.querySelectorAll('.caption-visual-line');
+            let currentText;
+
+            if (lines.length > 0) {
+                // Lấy segments từ dòng cuối cùng
+                const lastLine = lines[lines.length - 1];
+                const segments = lastLine.querySelectorAll(SEL.captionSegment.replace('.', '') === 'ytp-caption-segment'
+                    ? SEL.captionSegment : SEL.captionSegment);
+                currentText = Array.from(segments).map(s => s.textContent.trim()).filter(Boolean).join(' ').trim();
+            } else {
+                // Fallback: lấy tất cả segments nếu không có visual-line
+                const segments = $$(SEL.captionSegment, lastWindow);
+                if (!segments.length) {
+                    State.lastRawText = '';
+                    return this.removeContainer();
+                }
+                currentText = Array.from(segments).map(s => s.textContent.trim()).filter(Boolean).join(' ').trim();
             }
 
-            let currentText = Array.from(segments).map(s => s.textContent.trim()).filter(Boolean).join(' ').trim();
             if (!currentText) return this.removeContainer();
             if (currentText === State.lastRawText) return;
-
-            // Chỉ lấy câu cuối nếu có nhiều câu, hoặc cắt ngắn nếu quá dài
-            const sentences = currentText.split(/(?<=[.!?。！？])\s+/);
-            if (sentences.length > 1) {
-                const last = sentences[sentences.length - 1];
-                currentText = last.length >= CONFIG.MIN_TEXT_LENGTH ? last : sentences.slice(-2).join(' ');
-            }
-
-            // Giới hạn độ dài tối đa
-            if (currentText.length > CONFIG.MAX_TEXT_LENGTH) {
-                // Cắt từ cuối, tìm khoảng trắng gần nhất để không cắt giữa từ
-                const truncated = currentText.slice(-CONFIG.MAX_TEXT_LENGTH);
-                const spaceIdx = truncated.indexOf(' ');
-                currentText = spaceIdx > 0 ? truncated.slice(spaceIdx + 1) : truncated;
-            }
-
-            if (State.lastStableText && !currentText.includes(State.lastStableText.substring(0, 15)) &&
-                !State.lastStableText.includes(currentText.substring(0, 15))) State.lastStableText = '';
 
             State.lastRawText = currentText;
             clearTimeout(State.sentenceTimeout);
 
-            const shouldTranslateNow = CONFIG.SENTENCE_END.test(currentText) ||
-                (currentText.length >= CONFIG.MIN_TEXT_LENGTH && currentText !== State.lastStableText && State.cache.has(currentText.trim()));
-
-            if (shouldTranslateNow) {
+            // Dịch ngay nếu đã có cache hoặc câu đã kết thúc
+            if (State.cache.has(currentText.trim()) || CONFIG.SENTENCE_END.test(currentText)) {
                 await this.translateAndShow(currentText);
             } else {
+                // Đợi caption ổn định rồi mới dịch (tránh dịch khi text đang gõ dở)
                 State.sentenceTimeout = setTimeout(async () => {
-                    if (State.lastRawText === currentText && currentText !== State.lastStableText && currentText.length >= CONFIG.MIN_TEXT_LENGTH) {
+                    if (State.lastRawText === currentText) {
                         await this.translateAndShow(currentText);
                     }
                 }, CONFIG.SENTENCE_STABLE_MS);
@@ -474,18 +473,18 @@
             const controls = $(SEL.controls);
             if (!controls) return;
 
-            if (!$(SEL.settingsBtn)) {
-                controls.insertBefore(
-                    this.createButton('ytp-subtitle-settings-button', 'Cài đặt phụ đề', ICONS.settings, () => this.showSettings()),
-                    controls.firstChild
-                );
-            }
-            if (!$(SEL.translateBtn)) {
-                controls.insertBefore(
-                    this.createButton('ytp-translate-button', 'Dịch phụ đề (T)', ICONS.translate, () => this.toggleTranslation()),
-                    controls.firstChild
-                );
-            }
+            // Remove old buttons to prevent duplicates after SPA navigation
+            $(SEL.settingsBtn)?.remove();
+            $(SEL.translateBtn)?.remove();
+
+            controls.insertBefore(
+                this.createButton('ytp-subtitle-settings-button', 'Cài đặt phụ đề', ICONS.settings, () => this.showSettings()),
+                controls.firstChild
+            );
+            controls.insertBefore(
+                this.createButton('ytp-translate-button', 'Dịch phụ đề (T)', ICONS.translate, () => this.toggleTranslation()),
+                controls.firstChild
+            );
         },
 
         toggleTranslation() {
@@ -560,13 +559,18 @@
             });
 
             setTimeout(() => {
-                const handler = (e) => {
+                // Remove previous handler if exists
+                if (State.settingsClickHandler) {
+                    document.removeEventListener('click', State.settingsClickHandler);
+                }
+                State.settingsClickHandler = (e) => {
                     if (!panel.contains(e.target) && !e.target.closest(SEL.settingsBtn)) {
                         panel.remove();
-                        document.removeEventListener('click', handler);
+                        document.removeEventListener('click', State.settingsClickHandler);
+                        State.settingsClickHandler = null;
                     }
                 };
-                document.addEventListener('click', handler);
+                document.addEventListener('click', State.settingsClickHandler);
             }, 100);
         },
 
@@ -589,8 +593,18 @@
 
     function cleanup() {
         Observer.stop();
-        Translation.removeContainer();
+        clearTimeout(State.processTimeout);
+        clearTimeout(State.sentenceTimeout);
+        Translation.removeContainer(true);
         State.enabled = false;
+        State.lastRawText = '';
+        State.lastStableText = '';
+        // Cleanup settings panel listener
+        if (State.settingsClickHandler) {
+            document.removeEventListener('click', State.settingsClickHandler);
+            State.settingsClickHandler = null;
+        }
+        $(SEL.settingsPanel)?.remove();
     }
 
     // ==================== EVENT LISTENERS ====================
