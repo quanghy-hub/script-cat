@@ -24,8 +24,6 @@
         CACHE_LIMIT: 500,
         DEBOUNCE_MS: 100,
         SENTENCE_STABLE_MS: 300,
-        MIN_TEXT_LENGTH: 15,
-        MAX_TEXT_LENGTH: 120,
         TRANSLATE_API: 'https://translate.googleapis.com/translate_a/single',
         SENTENCE_END: /[.!?;:。！？；：]\s*$/
     };
@@ -121,8 +119,6 @@
             };
 
             this.applyPosition(container);
-            container.style.cursor = 'move';
-            container.style.userSelect = 'none';
 
             container.addEventListener('mousedown', (e) => this.onStart(e, container));
             container.addEventListener('touchstart', (e) => this.onStart(e, container), { passive: false });
@@ -372,8 +368,7 @@
             if (lines.length > 0) {
                 // Lấy segments từ dòng cuối cùng
                 const lastLine = lines[lines.length - 1];
-                const segments = lastLine.querySelectorAll(SEL.captionSegment.replace('.', '') === 'ytp-caption-segment'
-                    ? SEL.captionSegment : SEL.captionSegment);
+                const segments = lastLine.querySelectorAll(SEL.captionSegment);
                 currentText = Array.from(segments).map(s => s.textContent.trim()).filter(Boolean).join(' ').trim();
             } else {
                 // Fallback: lấy tất cả segments nếu không có visual-line

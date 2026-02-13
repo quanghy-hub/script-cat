@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Screenshot
 // @namespace    screenshot
-// @version      1.2.4
+// @version      1.2.5
 // @description  Screenshot any video on any website
 // @match        *://*/*
 // @exclude      /^https?://\S+\.(txt|png|jpg|jpeg|gif|xml|svg|manifest|log|ini)[^\/]*$/
@@ -55,20 +55,20 @@
                 border: none;
                 border-radius: 18px;
                 background: rgba(18, 18, 18, 0.7);
-                color: #3f3f3f61;
+                color: rgba(255, 255, 255, 0.75);
                 cursor: pointer;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 backdrop-filter: blur(1px);
-                transition: background 0.15s, transform 0.15s;
+                transition: background 0.15s, color 0.15s, transform 0.15s;
                 touch-action: manipulation;
                 -webkit-tap-highlight-color: transparent;
             }
             .video-screenshot-btn:hover,
             .video-screenshot-btn:active {
                 background: rgba(26, 26, 26, 0.9);
-                color: #000;
+                color: #fff;
             }
             .video-screenshot-btn:hover { transform: scale(1.1); }
             .video-screenshot-btn:active { transform: scale(0.95); }
@@ -130,9 +130,9 @@
             }, { passive: false });
 
             btn.addEventListener('touchmove', () => { touch = null; }, { passive: true });
+        } else {
+            btn.addEventListener('click', handleCapture);
         }
-
-        btn.addEventListener('click', handleCapture);
         container.appendChild(btn);
 
         // Position

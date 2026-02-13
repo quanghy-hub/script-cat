@@ -2,7 +2,7 @@
 // @name         Imagedl
 // @namespace    
 // @description  Extract and batch download images from websites. Supports zip download, auto-enlarge, canvas capture.
-// @version      3.1.1
+// @version      3.2.0
 // @connect      *
 // @grant        GM_openInTab
 // @grant        GM_registerMenuCommand
@@ -24,9 +24,7 @@
 
     // ==================== CONFIG ====================
     const CONFIG = {
-        shortcut: GM_getValue("shortcut") || "alt+W",
-        minSize: { width: 0, height: 0 },
-        maxSize: { width: 9999, height: 9999 }
+        shortcut: GM_getValue("shortcut") || "alt+W"
     };
 
     // ==================== LANG ====================
@@ -80,8 +78,8 @@
     `;
 
     // ==================== STATE ====================
-    let preImgSrcs = [];
-    let state = { images: [], selected: new Set(), zipData: [] };
+    let preImgSrcs = new Set();
+    let state = { images: [], selected: new Set(), zipData: {} };
 
     // ==================== INIT ====================
     GM_registerMenuCommand(LANG.download + " (Alt+W)", openPanel);
@@ -93,7 +91,7 @@
         const origSrc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
         Object.defineProperty(HTMLImageElement.prototype, 'src', {
             get() { return origSrc.get.call(this); },
-            set(v) { if (!preImgSrcs.includes(v)) preImgSrcs.push(v); origSrc.set.call(this, v); }
+            set(v) { preImgSrcs.add(v); origSrc.set.call(this, v); }
         });
     }
 
@@ -115,11 +113,13 @@
         // From pre-captured srcs
         preImgSrcs.forEach(s => urls.add(s));
 
-        // From background-image
-        const bgMatches = document.body.innerHTML.match(/background-image:\s*url\(([^)]+)\)/gi) || [];
-        bgMatches.forEach(m => {
-            const url = m.match(/url\(["']?([^"')]+)/)?.[1];
-            if (url) urls.add(url.replace(/&quot;/g, ''));
+        // From background-image (using getComputedStyle for CSP compatibility)
+        document.querySelectorAll('[style*="background"]').forEach(el => {
+            const bg = getComputedStyle(el).backgroundImage;
+            if (bg && bg !== 'none') {
+                const url = bg.match(/url\(["']?([^"')]+)/)?.[1];
+                if (url) urls.add(url);
+            }
         });
 
         // Apply big image rules
@@ -139,7 +139,7 @@
     // ==================== UI ====================
     function openPanel() {
         document.querySelector('.imgdl-overlay')?.remove();
-        state = { images: extractImages(), selected: new Set(), zipData: [] };
+        state = { images: extractImages(), selected: new Set(), zipData: {} };
 
         const overlay = document.createElement('div');
         overlay.className = 'imgdl-overlay';
@@ -193,7 +193,7 @@
         const grid = document.getElementById('imgdl-grid');
         grid.innerHTML = state.images.map((url, i) => `
             <div class="imgdl-item" data-index="${i}">
-                <img src="${url}" loading="lazy" onerror="this.parentElement.style.display='none'">
+                <img src="${url}" loading="lazy">
                 <div class="imgdl-item-info">
                     <span class="imgdl-size"></span>
                     <div class="imgdl-item-actions">
@@ -204,12 +204,15 @@
             </div>
         `).join('');
 
-        // Get natural sizes
+        // Get natural sizes + handle errors (CSP-safe, no inline handlers)
         grid.querySelectorAll('.imgdl-item img').forEach(img => {
-            img.onload = () => {
-                const size = img.closest('.imgdl-item').querySelector('.imgdl-size');
-                size.textContent = `${img.naturalWidth}×${img.naturalHeight}`;
+            const updateSize = () => {
+                const size = img.closest('.imgdl-item')?.querySelector('.imgdl-size');
+                if (size && img.naturalWidth) size.textContent = `${img.naturalWidth}×${img.naturalHeight}`;
             };
+            if (img.complete && img.naturalWidth) updateSize();
+            else img.onload = updateSize;
+            img.onerror = () => img.parentElement.style.display = 'none';
         });
     }
 
@@ -306,22 +309,30 @@
         document.body.appendChild(preview);
     }
 
-    function fetchBase64() {
-        state.images.forEach((url, i) => {
-            if (url.includes('data:image')) { state.zipData[i] = url; return; }
-            try {
-                GM_xmlhttpRequest({
-                    method: 'GET', url, responseType: 'blob',
-                    headers: { referer: location.origin + '/' },
-                    onload: r => {
-                        const reader = new FileReader();
-                        reader.onloadend = e => {
-                            if (e.target.result?.startsWith('data:image')) state.zipData[i] = e.target.result;
-                        };
-                        reader.readAsDataURL(r.response);
-                    }
+    async function fetchBase64() {
+        const BATCH = 5;
+        for (let i = 0; i < state.images.length; i += BATCH) {
+            await Promise.all(state.images.slice(i, i + BATCH).map((url, j) => {
+                const idx = i + j;
+                if (url.includes('data:image')) { state.zipData[idx] = url; return Promise.resolve(); }
+                return new Promise(resolve => {
+                    try {
+                        GM_xmlhttpRequest({
+                            method: 'GET', url, responseType: 'blob',
+                            headers: { referer: location.origin + '/' },
+                            onload: r => {
+                                const reader = new FileReader();
+                                reader.onloadend = e => {
+                                    if (e.target.result?.startsWith('data:image')) state.zipData[idx] = e.target.result;
+                                    resolve();
+                                };
+                                reader.readAsDataURL(r.response);
+                            },
+                            onerror: resolve
+                        });
+                    } catch { resolve(); }
                 });
-            } catch { }
-        });
+            }));
+        }
     }
 })();
