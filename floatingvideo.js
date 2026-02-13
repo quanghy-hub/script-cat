@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Floating
 // @namespace    
-// @version      5.9.5
+// @version      5.9.6
 // @description  Floating video player optimized for mobile with video rotation
 // @author       Claude
 // @match        *://*/*
@@ -18,8 +18,8 @@
     const ZINDEX = { ICON: 2147483646, PLAYER: 2147483647 };
     const FIT_MODES = ['contain', 'cover', 'fill'];
     const FIT_ICONS = ['⤢', '🔍', '↔'];
-    const ZOOM_LEVELS = [1, 1.5, 2];
-    const ZOOM_ICONS = ['+', '++', '-'];
+    const ZOOM_LEVELS = [1, 1.5, 2, 3];
+    const ZOOM_ICONS = ['+', '++', '+++', '-'];
     const IDLE_TIMEOUT = 3000;
     const VIDEO_CHECK_INTERVAL = 2000;
 
@@ -74,7 +74,7 @@
         #fvp-container {
             z-index: ${ZINDEX.PLAYER}; display: flex;
             align-items: center; justify-content: center;
-            width: min(400px, calc(100vw - 40px)); height: 225px;
+            width: min(680px, calc(100vw - 40px)); height: 420px;
             min-width: 200px; min-height: 120px;
             max-width: calc(100vw - 10px); max-height: calc(100vh - 60px);
             background: #000; border-radius: 12px;
