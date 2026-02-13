@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Forum
 // @namespace    forum
-// @version      1.3.2
+// @version      1.3.3
 // @description  Chia 2 cột Masonry + dàn rộng full màn hình
 // @match        *://*/*
 // @run-at       document-start
@@ -85,8 +85,12 @@ const injectStyles = () => {
 };
 
 const showContent = () => {
-    document.documentElement.classList.remove('fs-loading');
-    document.documentElement.classList.add('fs-ready');
+    const el = document.documentElement;
+    if (!el.classList.contains('fs-loading')) return;
+    el.classList.remove('fs-loading');
+    el.classList.add('fs-ready');
+    const early = document.getElementById('fs-early');
+    if (early) setTimeout(() => early.remove(), CFG.fadeTime + 50);
 };
 
 // ===== MASONRY =====
@@ -121,7 +125,7 @@ const destroyMasonry = inst => {
 const applyMasonry = () => {
     SELECTORS.forEach(({ c, i }) => {
         document.querySelectorAll(c).forEach(el => {
-            if (el.classList.contains('fs-original-hidden') || activeWrappers.some(w => w.container === el)) return;
+            if (el.classList.contains('fs-original-hidden')) return;
             const inst = createMasonry(el, i);
             if (inst) activeWrappers.push(inst);
         });
@@ -137,7 +141,7 @@ const removeMasonry = () => {
 // ===== LOGIC =====
 const shouldActivate = () => CFG.enabled && innerWidth > innerHeight && innerWidth >= CFG.minWidth;
 const update = () => shouldActivate() ? applyMasonry() : removeMasonry();
-const refresh = () => { removeMasonry(); if (shouldActivate()) setTimeout(applyMasonry, 100); };
+const refresh = () => { removeMasonry(); if (shouldActivate()) applyMasonry(); };
 const toggle = () => { CFG.enabled = !CFG.enabled; Config.save(CFG); update(); toast(CFG.enabled ? '📐 BẬT' : '📐 TẮT'); };
 
 // ===== MODAL =====
@@ -199,9 +203,10 @@ input:checked+.fs-slider:before{transform:translateX(18px)}
     return div;
 };
 
+const $ = id => document.getElementById(id);
+
 const openSettings = () => {
     if (!modal) modal = createModal();
-    const $ = id => modal.querySelector('#' + id);
     $('fs-en').checked = CFG.enabled;
     $('fs-wide').checked = CFG.wide;
     $('fs-minw').value = CFG.minWidth;
@@ -221,12 +226,9 @@ const init = () => {
         observer.observe(document.body, { childList: true, subtree: true });
     }, CFG.initDelay);
     let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(update, 200); });
-    addEventListener('orientationchange', () => setTimeout(update, 300));
     document.addEventListener('keydown', e => { if (e.altKey && e.shiftKey && e.code === 'KeyS') { e.preventDefault(); openSettings(); } });
-    if (typeof GM_registerMenuCommand !== 'undefined') {
-        GM_registerMenuCommand('📐 Cài đặt (Alt+Shift+S)', openSettings);
-        GM_registerMenuCommand('🔄 Toggle', toggle);
-    }
+    GM_registerMenuCommand('📐 Cài đặt (Alt+Shift+S)', openSettings);
+    GM_registerMenuCommand('🔄 Toggle', toggle);
 };
 
 document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', init) : init();

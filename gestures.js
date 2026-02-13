@@ -60,7 +60,7 @@ let CFG = Config.get();
 const State = {
     suppressUntil: 0, lpFired: false, rcHandled: false,
     lp: { timer: null, active: false, x: 0, y: 0 },
-    dblRight: { lastTime: 0, x: 0, y: 0, timer: null },
+    dblRight: { timer: null },
     dblTap: { last: null },
     edge: { active: false, lastY: 0 }
 };
@@ -68,8 +68,10 @@ const State = {
 const TOL = { move: 20, tap: 30 };
 const dist = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
 const suppress = (ms = 500) => { State.suppressUntil = Date.now() + ms; };
-const isEditable = el => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
-const isInteractive = el => { if (!el) return false; const t = el.tagName; return t === 'A' || t === 'BUTTON' || t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA' || t === 'VIDEO' || t === 'AUDIO' || el.onclick || el.closest?.('button, a, [role="button"], [onclick]'); };
+const EDITABLE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+const isEditable = el => el && (EDITABLE_TAGS.has(el.tagName) || el.isContentEditable);
+const INTERACTIVE_TAGS = new Set(['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'VIDEO', 'AUDIO']);
+const isInteractive = el => el && (INTERACTIVE_TAGS.has(el.tagName) || el.onclick || el.closest?.('button, a, [role="button"], [onclick]'));
 
 const getValidLink = ev => {
     for (const n of (ev.composedPath?.() || [])) {
@@ -233,9 +235,12 @@ const openSettings = () => {
 /* EVENTS */
 const initEvents = () => {
     const guard = e => { if (Date.now() < State.suppressUntil) { e.preventDefault(); e.stopPropagation(); return true; } return false; };
-    ['click', 'auxclick', 'contextmenu'].forEach(evt => window.addEventListener(evt, guard, true));
+    ['click', 'auxclick'].forEach(evt => window.addEventListener(evt, guard, true));
 
-    window.addEventListener('contextmenu', e => { if (State.lpFired || State.lp.active) { e.preventDefault(); e.stopPropagation(); } }, true);
+    window.addEventListener('contextmenu', e => {
+        if (guard(e)) return;
+        if (State.lpFired || State.lp.active) { e.preventDefault(); e.stopPropagation(); }
+    }, true);
 
     // Long Press
     window.addEventListener('pointerdown', e => {
@@ -346,17 +351,20 @@ const initEvents = () => {
             el = el.parentElement;
         }
         wheelAcc += e.deltaX;
+        clearTimeout(wheelTimer);
         if (Math.abs(wheelAcc) > CFG.pager.threshold) {
             const dir = wheelAcc > 0 ? 1 : -1;
             wheelHops = dir !== wheelDir ? 1 : wheelHops + 1;
             wheelDir = dir; wheelAcc = 0;
-            clearTimeout(wheelTimer);
             // Chờ dừng cuộn rồi mới navigate
             wheelTimer = setTimeout(() => {
                 const isMax = wheelHops >= CFG.pager.hops;
                 goPage(wheelDir, isMax);
-                wheelDir = 0; wheelHops = 0;
-            }, 300); // 300ms sau khi ngừng cuộn
+                wheelAcc = 0; wheelDir = 0; wheelHops = 0;
+            }, 300);
+        } else {
+            // Reset nếu dừng cuộn mà chưa đạt threshold
+            wheelTimer = setTimeout(() => { wheelAcc = 0; wheelDir = 0; wheelHops = 0; }, CFG.pager.window);
         }
     }, { passive: true });
 

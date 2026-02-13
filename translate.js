@@ -39,7 +39,7 @@
     .ilt-panel input,.ilt-panel select{background:#333;border:1px solid #555;color:#fff;border-radius:4px;padding:4px;max-width:140px}
     .ilt-btn{width:100%;margin-top:10px;padding:8px;background:#0079d3;border:none;border-radius:4px;color:#fff;cursor:pointer}
     .ilt-trans-container{margin:8px 0;width:100%;animation:iF .2s;border-top:1px dashed #444;padding-top:6px}
-    .ilt-trans{padding:6px 12px;border-left:3px solid var(--ilt-fg);background:var(--ilt-bg);color:var(--ilt-fg);font:italic var(--ilt-fs)/1.6 system-ui;white-space:pre-wrap}
+    .ilt-trans{padding:6px 12px;background:var(--ilt-bg);color:var(--ilt-fg);font:italic var(--ilt-fs)/1.6 system-ui;white-space:pre-wrap}
     .ilt-meta{font-size:.75em;opacity:.6}
     @keyframes iF{from{transform:translateY(-5px);opacity:0}to{transform:none;opacity:1}}
   `;
@@ -132,33 +132,44 @@
     for (const [k] of toDelete) cache.delete(k);
   }
 
-  async function trans(txt, node) {
-    // Toggle: remove existing translation
-    if (node.nextElementSibling?.classList.contains('ilt-trans-container')) {
-      node.nextElementSibling.remove();
-      return;
-    }
-    // Skip: toàn ký tự vô nghĩa
-    if (!hasMeaningful(txt)) return;
-
-    // Check real cache (return cached result instantly)
-    const cached = cache.get(txt);
-    if (cached?.result) {
-      // Dedupe: tránh spam cùng text quá nhanh
-      if (Date.now() - cached.ts < cfg.dedupeSeconds * 1000) return;
-      cached.ts = Date.now();
-      renderTranslation(node, cached.result);
-      return;
-    }
-
-    // Dedupe for pending requests
-    if (cached && Date.now() - cached.ts < cfg.dedupeSeconds * 1000) return;
-    cache.set(txt, { result: null, ts: Date.now() });
-
+  /** Create translation container with optional text */
+  function mkTransBox(text) {
     const w = document.createElement('div');
     w.className = 'ilt-trans-container';
-    w.innerHTML = `<div class="ilt-trans"><div class="ilt-meta">…</div></div>`;
-    node.parentNode.insertBefore(w, node.nextSibling);
+    const inner = document.createElement('div');
+    inner.className = 'ilt-trans';
+    if (text) {
+      inner.textContent = text;
+    } else {
+      inner.innerHTML = '<span class="ilt-meta">…</span>';
+    }
+    w.appendChild(inner);
+    return w;
+  }
+
+  async function trans(txt, node) {
+    // Toggle: remove existing translation
+    const existing = node.querySelector(':scope > .ilt-trans-container');
+    if (existing) { existing.remove(); return; }
+
+    if (!hasMeaningful(txt)) return;
+
+    // Check cache
+    const cached = cache.get(txt);
+    const now = Date.now();
+    if (cached?.result) {
+      if (now - cached.ts < cfg.dedupeSeconds * 1000) return;
+      cached.ts = now;
+      node.appendChild(mkTransBox(cached.result));
+      return;
+    }
+
+    // Dedupe pending requests
+    if (cached && now - cached.ts < cfg.dedupeSeconds * 1000) return;
+    cache.set(txt, { result: null, ts: now });
+
+    const w = mkTransBox();
+    node.appendChild(w);
 
     try {
       let res;
@@ -177,7 +188,7 @@
               else fail(new Error('Empty Gemini response: ' + e.responseText.slice(0, 200)));
             } catch (x) { fail(x); }
           },
-          onerror: e => fail(new Error('Gemini network error'))
+          onerror: () => fail(new Error('Gemini network error'))
         }));
       } else {
         const gtUrl = tl => `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${tl}&dt=t&q=${encodeURIComponent(txt)}`;
@@ -192,34 +203,15 @@
       const cleaned = cleanJunk(res);
       if (!cleaned) { w.remove(); return; }
 
-      // Cache the result
       cache.set(txt, { result: cleaned, ts: Date.now() });
       trimCache();
 
-      // Render safely with textContent
-      const div = document.createElement('div');
-      div.className = 'ilt-txt';
-      div.textContent = cleaned;
-      w.firstChild.replaceChildren(div);
+      w.firstChild.textContent = cleaned;
     } catch (e) {
       console.error('[Translate]', e);
       w.textContent = 'Err';
       setTimeout(() => w.remove(), 2000);
     }
-  }
-
-  /** Render cached translation result */
-  function renderTranslation(node, text) {
-    const w = document.createElement('div');
-    w.className = 'ilt-trans-container';
-    const inner = document.createElement('div');
-    inner.className = 'ilt-trans';
-    const txt = document.createElement('div');
-    txt.className = 'ilt-txt';
-    txt.textContent = text;
-    inner.appendChild(txt);
-    w.appendChild(inner);
-    node.parentNode.insertBefore(w, node.nextSibling);
   }
 
   function act(x, y) {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MGestures
 // @namespace    mgestures
-// @version      1.2.5
+// @version      1.2.6
 // @description  Long-press mở link, Double-tap đóng tab, Edge swipe scroll
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
@@ -27,7 +27,7 @@ const Config = {
         try {
             const s = JSON.parse(GM_getValue(STORAGE_KEY) || '{}');
             this._c = { lpress: { ...DEFAULTS.lpress, ...s.lpress }, dblTap: { ...DEFAULTS.dblTap, ...s.dblTap }, edge: { ...DEFAULTS.edge, ...s.edge } };
-        } catch { this._c = { ...DEFAULTS }; }
+        } catch { this._c = { lpress: { ...DEFAULTS.lpress }, dblTap: { ...DEFAULTS.dblTap }, edge: { ...DEFAULTS.edge } }; }
         return this._c;
     },
     save(c) { GM_setValue(STORAGE_KEY, JSON.stringify({ lpress: c.lpress, dblTap: c.dblTap, edge: c.edge })); this._c = c; }
@@ -39,7 +39,7 @@ const TOL = { move: 20, tap: 30 };
 const dist = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
 const suppress = (ms = 500) => { State.suppressUntil = Date.now() + ms; };
 const isEditable = el => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
-const isInteractive = el => { if (!el) return false; const t = el.tagName; return t === 'A' || t === 'BUTTON' || t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA' || t === 'VIDEO' || t === 'AUDIO' || el.onclick || el.closest?.('button, a, [role="button"], [onclick]'); };
+const isInteractive = el => { if (!el) return false; const t = el.tagName; return t === 'A' || t === 'BUTTON' || t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA' || t === 'VIDEO' || t === 'AUDIO' || el.closest?.('button, a, [role="button"], [onclick]'); };
 const getValidLink = ev => { for (const n of (ev.composedPath?.() || [])) if (n.tagName === 'A' && n.href && !/^(javascript|mailto|tel|sms|#):/.test(n.href)) return n; return null; };
 const cancelLP = () => { clearTimeout(State.lp.timer); State.lp.timer = null; State.lp.active = false; };
 
@@ -75,7 +75,9 @@ const startMomentum = (velocity) => {
     const friction = 0.97, minVelocity = 0.3;
     const step = () => {
         if (Math.abs(velocity) < minVelocity) return;
+        const before = el.scrollTop;
         el.scrollTop += velocity;
+        if (el.scrollTop === before) return;
         velocity *= friction;
         momentumRAF = requestAnimationFrame(step);
     };
@@ -133,10 +135,8 @@ const openSettings = () => {
 /* EVENTS */
 const initEvents = () => {
     const guard = e => { if (Date.now() < State.suppressUntil) { e.preventDefault(); e.stopPropagation(); return true; } return false; };
-    ['click', 'auxclick', 'contextmenu'].forEach(evt => window.addEventListener(evt, guard, true));
-
-    // Block context menu when long-press fires
-    window.addEventListener('contextmenu', e => { if (State.lpFired || State.lp.active) { e.preventDefault(); e.stopPropagation(); } }, true);
+    ['click', 'auxclick'].forEach(evt => window.addEventListener(evt, guard, true));
+    window.addEventListener('contextmenu', e => { if (State.lpFired || State.lp.active || Date.now() < State.suppressUntil) { e.preventDefault(); e.stopPropagation(); } }, true);
 
     window.addEventListener('touchstart', e => {
         State.lpFired = false;
@@ -223,7 +223,7 @@ const initEvents = () => {
     }, true);
 
     window.addEventListener('touchcancel', () => { cancelLP(); State.edge.active = false; }, true);
-    window.addEventListener('click', e => { if (State.lpFired) { e.preventDefault(); e.stopPropagation(); State.lpFired = false; } }, true);
+    window.addEventListener('click', e => { if (State.lpFired) { e.preventDefault(); e.stopPropagation(); State.lpFired = false; } }, true); // chặn click ngay sau long-press
 };
 
 /* INIT */

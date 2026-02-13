@@ -56,11 +56,12 @@
 
     const selectAll = () => {
         const a = document.activeElement;
-        if (a?.tagName === 'INPUT' || a?.tagName === 'TEXTAREA') { a.focus(); a.select(); return true; }
-        const s = getSelection(); s?.removeAllRanges(); const r = document.createRange(); r.selectNodeContents(document.body); s?.addRange(r); return true;
+        if (a?.tagName === 'INPUT' || a?.tagName === 'TEXTAREA') { a.focus(); a.select(); return; }
+        const s = getSelection(); s?.removeAllRanges(); const r = document.createRange(); r.selectNodeContents(document.body); s?.addRange(r);
     };
 
-    const fname = u => { try { const n = new URL(u, location.href).pathname.split('/').pop()?.split('?')[0] || 'image'; return /\.(png|jpe?g|webp|gif|bmp|svg|avif)$/i.test(n) ? n : n + '.jpg'; } catch { return 'image.jpg'; } };
+    const IMG_RE = /\.(png|jpe?g|webp|gif|bmp|svg|avif)$/i;
+    const fname = u => { try { const n = new URL(u, location.href).pathname.split('/').pop()?.split('?')[0] || 'image'; return IMG_RE.test(n) ? n : n + '.jpg'; } catch { return 'image.jpg'; } };
     const getImg = t => !t?.tagName || t.closest?.('.qsb') ? null : t.tagName === 'IMG' ? t : t.closest?.('picture')?.querySelector('img');
 
     // === STYLES ===
@@ -140,12 +141,12 @@
             // 8 icons: Copy, SelectAll, + 6 providers = 4x2 grid
             arr.push({ t: 'Copy', h: '<span class="g">⧉</span>', f: async () => { toast(await copy(c.text) ? 'Đã chép' : 'Lỗi', c.x, c.y); hide(); } });
             arr.push({ t: 'Select All', h: '<span class="g">⤢</span>', f: () => { selectAll(); toast('Đã chọn hết', c.x, c.y); } });
-            ps.forEach(p => arr.push({ t: p.name, h: p.icon ? `<img src="${p.icon}">` : '<span class="g">🔗</span>', f: () => open(p.url, c.text) }));
+            ps.forEach(p => arr.push({ t: p.name, h: p.icon ? `<img src="${p.icon}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'g',textContent:'${p.name[0] || '?'}'}))">` : '<span class="g">🔗</span>', f: () => open(p.url, c.text) }));
         } else if (c.type === 'image') {
             // 4 icons: Download, Copy URL, Google Lens, Bing Visual = 4x1 grid
             arr.push({ t: 'Tải ảnh', h: '<span class="g">⬇</span>', f: () => { dl(c.img, c.x, c.y); hide(); } });
             arr.push({ t: 'Copy URL', h: '<span class="g">⧉</span>', f: async () => { await copy(c.img); toast('Đã chép URL', c.x, c.y); hide(); } });
-            IMG_SEARCH.forEach(p => arr.push({ t: p.name, h: p.icon ? `<img src="${p.icon}">` : '<span class="g">🔗</span>', f: () => open(p.url, null, c.img) }));
+            IMG_SEARCH.forEach(p => arr.push({ t: p.name, h: p.icon ? `<img src="${p.icon}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'g',textContent:'${p.name[0] || '?'}'}))">` : '<span class="g">🔗</span>', f: () => open(p.url, null, c.img) }));
         }
         return arr;
     };
@@ -211,8 +212,9 @@
         lpT = setTimeout(() => { const src = img.currentSrc || img.src; if (src) { ctx = { type: 'image', img: src, x: lp.x + 6, y: lp.y + 6 }; show(items(ctx), ctx.x, ctx.y, C.ROW_IMG); } }, C.LONG);
     }, { passive: true });
     document.addEventListener('pointermove', e => { if (lpT && (Math.abs(e.pageX - lp.x) > 5 || Math.abs(e.pageY - lp.y) > 5)) { clearTimeout(lpT); lpT = null; } }, { passive: true });
-    document.addEventListener('pointerup', () => { clearTimeout(lpT); lpT = null; }, { passive: true });
-    document.addEventListener('pointercancel', () => { clearTimeout(lpT); lpT = null; }, { passive: true });
+    const cancelLp = () => { clearTimeout(lpT); lpT = null; };
+    document.addEventListener('pointerup', cancelLp, { passive: true });
+    document.addEventListener('pointercancel', cancelLp, { passive: true });
 
     // Dismiss
     document.addEventListener('mousedown', e => { if (bubble && !bubble.contains(e.target)) hide(); });

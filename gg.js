@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ggbutton
 // @description  Google Search
-// @version      5.1.3
+// @version      5.1.4
 // @match        *://www.google.*/search*
 // @include      /^https?:\/\/www\.google\.[a-z.]+\/search.*/
 // @run-at       document-end
@@ -97,7 +97,7 @@
         { name: 'File', p: 'file', n: ['PDF', 'DOC', 'XLS', 'PPT', 'TXT'] }
     ];
 
-    let panel, trigger, panelOpen = false, isDragging = false, touchMoved = false;
+    let panel, trigger, panelOpen = false, isDragging = false;
 
     function init() {
         document.head.appendChild(Object.assign(document.createElement('style'), { textContent: STYLES }));
@@ -148,14 +148,14 @@
             const pt = e.touches?.[0] || e;
             startX = pt.clientX; startY = pt.clientY;
             startL = trigger.offsetLeft; startT = trigger.offsetTop;
-            isDragging = false; touchMoved = false;
+            isDragging = false;
             trigger.classList.add('dragging');
         };
 
         const onMove = (e) => {
             const pt = e.touches?.[0] || e;
             const dx = pt.clientX - startX, dy = pt.clientY - startY;
-            if (Math.abs(dx) > 5 || Math.abs(dy) > 5) { isDragging = true; touchMoved = true; }
+            if (Math.abs(dx) > 5 || Math.abs(dy) > 5) isDragging = true;
             if (isDragging) {
                 if (e.cancelable) e.preventDefault();
                 trigger.style.left = Math.max(0, startL + dx) + 'px';
@@ -173,9 +173,8 @@
         // Mouse
         trigger.addEventListener('mousedown', (e) => {
             onStart(e);
-            const move = (e) => onMove(e);
-            const up = () => { document.removeEventListener('mousemove', move); onEnd(); };
-            document.addEventListener('mousemove', move);
+            const up = () => { document.removeEventListener('mousemove', onMove); onEnd(); };
+            document.addEventListener('mousemove', onMove);
             document.addEventListener('mouseup', up, { once: true });
         });
 
@@ -190,8 +189,8 @@
         trigger.addEventListener('touchmove', onMove, { passive: false });
         trigger.addEventListener('touchend', () => {
             onEnd();
-            if (!touchMoved) toggle();
-            touchMoved = false;
+            if (!isDragging) toggle();
+            isDragging = false;
         });
 
         // Outside click to close
@@ -220,5 +219,5 @@
         location.href = url.toString();
     }
 
-    document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', init) : init();
+    init();
 })();
