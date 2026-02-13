@@ -74,7 +74,7 @@
         #fvp-container {
             z-index: ${ZINDEX.PLAYER}; display: flex;
             align-items: center; justify-content: center;
-            width: min(320px, calc(100vw - 40px)); height: 180px;
+            width: min(400px, calc(100vw - 40px)); height: 225px;
             min-width: 200px; min-height: 120px;
             max-width: calc(100vw - 10px); max-height: calc(100vh - 60px);
             background: #000; border-radius: 12px;
@@ -589,7 +589,7 @@
             <span id="fvp-badge" style="display:none">0</span>
         `);
         icon.id = 'fvp-master-icon';
-        Object.assign(icon.style, { bottom: '20px', left: '20px', display: document.querySelectorAll('video').length ? 'flex' : 'none' });
+        Object.assign(icon.style, { top: `${(innerHeight - 48) / 2}px`, left: '12px', display: document.querySelectorAll('video').length ? 'flex' : 'none' });
         document.body.appendChild(icon);
 
         // Menu
@@ -640,7 +640,7 @@
         `);
         box.id = 'fvp-container';
         box.style.display = 'none';
-        box.style.top = `${clamp((innerHeight - 180) / 2, 20, innerHeight - 200)}px`;
+        box.style.top = `${clamp((innerHeight - 225) / 2, 20, innerHeight - 245)}px`;
         box.style.left = '20px';
         document.body.appendChild(box);
 
