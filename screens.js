@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Screenshot
 // @namespace    screenshot
-// @version      1.2.5
-// @description  Screenshot any video on any website
+// @version      1.2.6
+// @description  Screenshot 
 // @match        *://*/*
 // @exclude      /^https?://\S+\.(txt|png|jpg|jpeg|gif|xml|svg|manifest|log|ini)[^\/]*$/
 // @exclude      *://*.tiktok.com/*
@@ -111,7 +111,10 @@
             capture(video);
         };
 
-        // Touch events for mobile
+        // Always handle mouse click
+        btn.addEventListener('click', handleCapture);
+
+        // Additionally handle touch events for mobile
         if (IS_MOBILE) {
             let touch = null;
             btn.addEventListener('touchstart', (e) => {
@@ -130,8 +133,6 @@
             }, { passive: false });
 
             btn.addEventListener('touchmove', () => { touch = null; }, { passive: true });
-        } else {
-            btn.addEventListener('click', handleCapture);
         }
         container.appendChild(btn);
 
