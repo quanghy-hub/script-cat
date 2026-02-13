@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video
 // @namespace    
-// @version      2.6.2
+// @version      2.7.0
 // @description  Swipe seek optimized for Chrome mobile
 // @match        *://*/*
 // @grant        GM_setValue
@@ -20,7 +20,7 @@
   /* ─────────────────── CONFIG ─────────────────── */
   const STORE = 'VF_FINAL_V2';
   const DEF = {
-    swipeLong: 0.3, swipeShort: 0.15, shortThreshold: 200,
+    swipeSens: 0.3,
     minSwipeDistance: 30, verticalTolerance: 80, diagonalThreshold: 1.5,
     realtimePreview: true, throttle: 15,
     forwardStep: 5, hotkeys: true,
@@ -58,8 +58,10 @@
       const v = fs.querySelector('video');
       if (v) return v;
     }
-    return [...document.querySelectorAll('video')]
-      .find(v => v.offsetWidth && v.offsetHeight) || null;
+    for (const v of document.querySelectorAll('video')) {
+      if (v.offsetWidth && v.offsetHeight) return v;
+    }
+    return null;
   };
 
   const getVideoAtPoint = (x, y) => {
@@ -114,6 +116,11 @@
     } catch { }
   };
 
+  // Auto-apply boost when video starts playing
+  document.addEventListener('play', e => {
+    if (e.target.tagName === 'VIDEO') applyBoost(e.target);
+  }, true);
+
   /* ─────────────────── KEYBOARD ─────────────────── */
   document.addEventListener('keydown', e => {
     if (!cfg.hotkeys || ['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
@@ -141,10 +148,17 @@
   /* ─────────────────── TOUCH SWIPE SEEK ─────────────────── */
   const swipe = { active: false, video: null, startX: 0, startY: 0, startTime: 0, lastUpdate: 0, cancelled: false };
 
-  const calcDelta = (dx, duration) => {
+  const calcDelta = dx => {
     const effectiveDx = dx > 0 ? dx - cfg.minSwipeDistance : dx + cfg.minSwipeDistance;
-    const sens = duration <= cfg.shortThreshold ? cfg.swipeShort : cfg.swipeLong;
-    return Math.round(effectiveDx * sens);
+    return Math.round(effectiveDx * cfg.swipeSens);
+  };
+
+  const isValidSwipe = (dx, dy) => {
+    const absDx = Math.abs(dx), absDy = Math.abs(dy);
+    return absDx > absDy
+      && absDx / (absDy + 1) >= cfg.diagonalThreshold
+      && absDx >= cfg.minSwipeDistance
+      && absDy <= cfg.verticalTolerance;
   };
 
   const onTouchStart = e => {
@@ -176,13 +190,14 @@
     const absDx = Math.abs(dx), absDy = Math.abs(dy);
 
     if (absDx < 5 && absDy < 5) return;
-    if (absDy > cfg.verticalTolerance || (absDx > 0 && absDx / (absDy + 1) < cfg.diagonalThreshold)) {
-      swipe.cancelled = true; return;
+    if (!isValidSwipe(dx, dy)) {
+      if (absDy > cfg.verticalTolerance || (absDx > 0 && absDx / (absDy + 1) < cfg.diagonalThreshold))
+        swipe.cancelled = true;
+      return;
     }
-    if (absDx < cfg.minSwipeDistance) return;
     if (absDx > absDy) e.preventDefault();
 
-    const delta = calcDelta(dx, swipe.video.duration);
+    const delta = calcDelta(dx);
     showSeekNotice(swipe.video, delta);
 
     if (cfg.realtimePreview) {
@@ -200,15 +215,13 @@
     if (!swipe.cancelled && e.changedTouches.length === 1) {
       const t = e.changedTouches[0];
       const dx = t.clientX - swipe.startX, dy = t.clientY - swipe.startY;
-      const absDx = Math.abs(dx), absDy = Math.abs(dy);
-      const isValid = absDx > absDy && absDx / (absDy + 1) >= cfg.diagonalThreshold
-        && absDx >= cfg.minSwipeDistance && absDy <= cfg.verticalTolerance;
 
-      if (isValid) {
-        const delta = calcDelta(dx, swipe.video.duration);
-        if (!cfg.realtimePreview)
+      if (isValidSwipe(dx, dy)) {
+        const delta = calcDelta(dx);
+        if (!cfg.realtimePreview) {
           swipe.video.currentTime = clamp(swipe.startTime + delta, 0, swipe.video.duration);
-        showSeekNotice(swipe.video, delta);
+          showSeekNotice(swipe.video, delta);
+        }
       }
     }
     swipe.active = swipe.cancelled = false;
