@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Floating
 // @namespace    
-// @version      5.9.4
+// @version      5.9.5
 // @description  Floating video player optimized for mobile with video rotation
 // @author       Claude
 // @match        *://*/*
@@ -31,7 +31,7 @@
         #fvp-master-icon, #fvp-menu, #fvp-container { position: fixed; }
         
         #fvp-master-icon {
-            z-index: ${ZINDEX.ICON}; width: 48px; height: 48px;
+            z-index: ${ZINDEX.ICON}; width: 42px; height: 42px;
             background: rgba(0,0,0,0.6); backdrop-filter: blur(10px);
             border: 1px solid rgba(255,255,255,0.15); border-radius: 50%;
             color: #fff; display: flex; align-items: center; justify-content: center;
