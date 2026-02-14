@@ -208,11 +208,11 @@
 
         /* Resize Handles */
         .fvp-resize-handle { position: absolute; z-index: 100; touch-action: none; }
-        .fvp-resize-r { top: 20px; right: -10px; bottom: 80px; width: 20px; cursor: e-resize; }
+        .fvp-resize-r { top: 20px; right: 0; bottom: 80px; width: 20px; cursor: e-resize; }
         .fvp-resize-b { bottom: 80px; left: 20px; right: 20px; height: 20px; cursor: s-resize; }
-        .fvp-resize-br { bottom: 80px; right: -10px; width: 30px; height: 30px; cursor: se-resize; z-index: 101; }
+        .fvp-resize-br { bottom: 80px; right: 5px; width: 30px; height: 30px; cursor: se-resize; z-index: 101; }
         .fvp-resize-br::after {
-            content: ''; position: absolute; bottom: 14px; right: 14px;
+            content: ''; position: absolute; bottom: 8px; right: 8px;
             width: 8px; height: 8px; pointer-events: none;
             border-bottom: 2px solid rgba(255,255,255,0.5); 
             border-right: 2px solid rgba(255,255,255,0.5);
