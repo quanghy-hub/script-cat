@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Floating
 // @namespace    
-// @version      5.9.6
+// @version      5.9.8
 // @description  Floating video player optimized for mobile with video rotation
 // @author       Claude
 // @match        *://*/*
@@ -127,28 +127,30 @@
 
         /* Seek Bar */
         #fvp-seek-row { display: flex; align-items: center; gap: 8px; width: 100%; }
-        #fvp-play-pause { font-size: 18px; min-width: 28px; min-height: 28px; flex-shrink: 0; }
-        #fvp-seek-container { position: relative; flex: 1; min-width: 0; padding: 18px 0; margin: -18px 0; }
+        #fvp-play-pause { font-size: 18px; min-width: 28px; min-height: 28px; flex-shrink: 0; align-self: center; line-height: 1; }
+        #fvp-seek-container { position: relative; flex: 1; min-width: 0; padding: 20px 0; margin: -20px 0; }
         
         #fvp-seek-track {
             position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
-            height: 6px; background: rgba(255,255,255,0.2); border-radius: 3px;
+            height: 10px; background: rgba(255,255,255,0.2); border-radius: 5px;
             overflow: hidden; pointer-events: none; z-index: 1;
         }
         #fvp-buffer {
             position: absolute; top: 0; left: 0; height: 100%; width: 0%;
-            background: rgba(255,255,255,0.5); border-radius: 3px;
+            background: rgba(255,255,255,0.5); border-radius: 5px;
         }
         #fvp-seek {
             width: 100%; height: 20px; margin: 0; z-index: 2;
             position: relative; background: transparent;
             -webkit-appearance: none; cursor: pointer; touch-action: none;
+            outline: none; border: none;
         }
-        #fvp-seek::-webkit-slider-runnable-track { height: 6px; background: transparent; border-radius: 3px; }
+        #fvp-seek:focus { outline: none; }
+        #fvp-seek::-webkit-slider-runnable-track { height: 10px; background: transparent; border-radius: 5px; }
         #fvp-seek::-webkit-slider-thumb {
-            -webkit-appearance: none; width: 20px; height: 20px; margin-top: -7px;
-            background: #1da6f0; border-radius: 50%;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+            -webkit-appearance: none; width: 20px; height: 20px; margin-top: -5px;
+            background: #1da6f0; border-radius: 50%; border: none;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.5);
         }
         #fvp-seek:active::-webkit-slider-thumb { background: #0d8fd8; }
         
@@ -156,10 +158,10 @@
             position: absolute; top: 50%; left: 0; right: 0; 
             transform: translateY(-50%); padding: 0 2px;
             display: flex; justify-content: space-between;
-            font-size: 10px; color: rgba(255,255,255,0.9); pointer-events: none;
+            font-size: 10px; color: #1da6f0; pointer-events: none;
         }
         #fvp-current-time, #fvp-duration {
-            background: rgba(0,0,0,0.6); padding: 1px 6px;
+            padding: 1px 6px;
             border-radius: 4px; font-weight: 500;
         }
 
@@ -233,7 +235,6 @@
 
         /* Responsive */
         @media (max-width: 480px) {
-            #fvp-container { width: min(280px, calc(100vw - 20px)); height: 150px; }
             #fvp-ctrl { padding: 8px 8px 6px; height: 55px; }
             .fvp-control-row { gap: 4px; }
             .fvp-btn { min-width: 28px; min-height: 28px; font-size: 16px; }
@@ -380,6 +381,24 @@
 
         box.style.display = 'flex';
         menu.style.display = 'none';
+
+        // Set initial size based on orientation
+        const isPortrait = innerHeight > innerWidth;
+        if (isPortrait) {
+            box.style.width = `${innerWidth}px`;
+            box.style.height = `${innerHeight}px`;
+            box.style.top = '0px';
+            box.style.left = '0px';
+            box.style.borderRadius = '0';
+        } else {
+            const w = Math.floor(innerWidth * 0.5);
+            const h = innerHeight - 40;
+            box.style.width = `${w}px`;
+            box.style.height = `${h}px`;
+            box.style.top = '20px';
+            box.style.left = `${Math.floor((innerWidth - w) / 2)}px`;
+            box.style.borderRadius = '12px';
+        }
 
         // Seek bar update loop
         const updateLoop = () => {
@@ -640,8 +659,6 @@
         `);
         box.id = 'fvp-container';
         box.style.display = 'none';
-        box.style.top = `${clamp((innerHeight - 225) / 2, 20, innerHeight - 245)}px`;
-        box.style.left = '20px';
         document.body.appendChild(box);
 
         setupEvents();
