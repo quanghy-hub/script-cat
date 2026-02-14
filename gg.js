@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ggbutton
 // @description  Google Search
-// @version      5.1.4
+// @version      5.1.5
 // @match        *://www.google.*/search*
 // @include      /^https?:\/\/www\.google\.[a-z.]+\/search.*/
 // @run-at       document-end
@@ -44,9 +44,9 @@
         
         .gseb-panel {
             position: fixed;
-            background: #fff;
+            background: #1a1a1a;
             border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
             padding: 10px;
             z-index: 99998;
             display: none;
@@ -62,10 +62,10 @@
         .gseb-header {
             grid-column: 1 / -1;
             font-size: 10px;
-            color: #5f6368;
+            color: #9aa0a6;
             padding: 4px 2px 2px;
             font-weight: 600;
-            border-top: 1px solid #eee;
+            border-top: 1px solid #333;
         }
         .gseb-header:first-child { border-top: none; padding-top: 0; }
         
@@ -74,17 +74,13 @@
             height: 28px;
             border: none;
             border-radius: 6px;
-            background: #f1f3f4;
-            color: #3c4043;
+            background: #2a2a2a;
+            color: #e8eaed;
             font-size: 11px;
             font-weight: 500;
             cursor: pointer;
         }
         .gseb-cell:hover { background: #4285f4; color: #fff; }
-        
-        html[dark] .gseb-panel { background: #292a2d; }
-        html[dark] .gseb-header { color: #9aa0a6; border-color: #444; }
-        html[dark] .gseb-cell { background: #3c4043; color: #e8eaed; }
         html[dark] .gseb-cell:hover { background: #4285f4; }
     `;
 
