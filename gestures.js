@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gestures
 // @namespace    gestures
-// @version      4.2.4
+// @version      4.3.0
 // @description  Long-press/Right-click mở link, Double-tap đóng tab, Edge swipe scroll, Pager
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
@@ -25,7 +25,7 @@ const DEFAULTS = {
     dblRightMs: 500,
     dblTap: { enabled: false, ms: 300 },
     edge: { enabled: true, width: 40, speed: 3 },
-    pager: { enabled: true, threshold: 80, window: 1000, hops: 3 }
+    pager: { enabled: true, threshold: 80, window: 1000, hops: 4 }
 };
 
 const Config = {
@@ -91,13 +91,6 @@ const closeTab = () => { try { window.close(); } catch { } };
 
 const cancelLP = () => { clearTimeout(State.lp.timer); State.lp.timer = null; State.lp.active = false; };
 
-const toast = msg => {
-    let t = document.getElementById('ges-toast');
-    if (!t) { t = document.createElement('div'); t.id = 'ges-toast'; document.body.appendChild(t); }
-    t.textContent = msg; t.style.opacity = '1';
-    clearTimeout(t._timer); t._timer = setTimeout(() => t.style.opacity = '0', 2000);
-};
-
 /* PAGER */
 let wheelAcc = 0, wheelTimer = null, wheelDir = 0, wheelHops = 0;
 
@@ -113,20 +106,75 @@ const findLink = (keywords, relType) => {
     return null;
 };
 
-const goPage = (dir, isMax) => {
-    const href = isMax
-        ? findLink(dir > 0 ? ['last', 'cuối', '末'] : ['first', 'đầu', '首'], dir > 0 ? 'last' : 'first')
-        : findLink(dir > 0 ? ['next', 'tiếp', 'sau', '»', '›', '下一'] : ['prev', 'trước', 'lùi', '«', '‹', '上一'], dir > 0 ? 'next' : 'prev');
-    toast(isMax ? (dir > 0 ? '⏭ Cuối' : '⏮ Đầu') : (dir > 0 ? '▶ Sau' : '◀ Trước'));
-    if (href) location.href = href;
+const goPage = (dir, hops, isMax) => {
+    if (isMax) {
+        const href = findLink(dir > 0 ? ['last', 'cuối', '末'] : ['first', 'đầu', '首'], dir > 0 ? 'last' : 'first');
+        if (href) location.href = href;
+        return;
+    }
+    const nextHref = findLink(dir > 0 ? ['next', 'tiếp', 'sau', '»', '›', '下一'] : ['prev', 'trước', 'lùi', '«', '‹', '上一'], dir > 0 ? 'next' : 'prev');
+    if (!nextHref) return;
+    if (hops <= 1) { location.href = nextHref; return; }
+    try {
+        const cur = new URL(location.href), nxt = new URL(nextHref, location.href);
+        // 1. Search params: tìm param khác giá trị giữa cur và nxt
+        for (const [k, v] of nxt.searchParams) {
+            if (!/^\d+$/.test(v)) continue;
+            const cv = cur.searchParams.get(k);
+            if (cv === v) continue;
+            const curVal = (cv !== null && /^\d+$/.test(cv)) ? +cv : +v - dir;
+            const step = +v - curVal;
+            if (!step) continue;
+            nxt.searchParams.set(k, Math.max(step > 0 ? 1 : 0, curVal + step * hops));
+            location.href = nxt.href; return;
+        }
+        // 2. Pathname: tìm segment có số khác nhau (page-2, page_3, hoặc số thuần)
+        const cp = cur.pathname.split('/'), np = nxt.pathname.split('/');
+        const numAt = s => { const m = s.match(/(\d+)$/); return m ? +m[1] : null; };
+        const len = Math.max(cp.length, np.length);
+        for (let i = 0; i < len; i++) {
+            const c = cp[i] || '', n = np[i] || '';
+            if (c === n) continue;
+            const nn = numAt(n);
+            if (nn === null) continue;
+            const cn = numAt(c);
+            const curVal = cn !== null ? cn : nn - dir;
+            const step = nn - curVal;
+            if (!step) continue;
+            const target = Math.max(step > 0 ? 1 : 0, curVal + step * hops);
+            np[i] = n.replace(/\d+$/, target);
+            nxt.pathname = np.join('/');
+            location.href = nxt.href; return;
+        }
+    } catch { }
+    location.href = nextHref;
 };
+
+/* PAGER INDICATOR */
+let pagerIndicator = null;
+
+const showPagerIcon = (dir, hops, maxHops) => {
+    if (!pagerIndicator) {
+        pagerIndicator = document.createElement('div');
+        pagerIndicator.id = 'ges-pager-icon';
+        document.body.appendChild(pagerIndicator);
+    }
+    const isMax = hops >= maxHops;
+    const icon = isMax ? (dir > 0 ? '⏭' : '⏮') : (dir > 0 ? '▶' : '◀');
+    const label = isMax ? (dir > 0 ? 'Cuối' : 'Đầu') : (hops + ' trang');
+    pagerIndicator.textContent = icon + ' ' + label;
+    pagerIndicator.classList.add('show');
+};
+
+const hidePagerIcon = () => { if (pagerIndicator) pagerIndicator.classList.remove('show'); };
 
 /* STYLES */
 const injectStyles = () => {
     const s = document.createElement('style');
     s.id = 'ges-styles';
     s.textContent = `
-        #ges-toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#1a1a1ae6;color:#fff;padding:8px 16px;border-radius:20px;font:13px/1.4 system-ui;z-index:2147483647;pointer-events:none;opacity:0;transition:opacity .2s}
+        #ges-pager-icon{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#1a1a1ae6;color:#fff;padding:8px 16px;border-radius:20px;font:13px/1.4 system-ui;z-index:2147483647;pointer-events:none;opacity:0;transition:opacity .2s}
+        #ges-pager-icon.show{opacity:1}
         #ges-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2147483646;opacity:0;pointer-events:none;transition:opacity .2s}
         #ges-overlay.open{opacity:1;pointer-events:auto}
         #ges-panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.95);width:min(360px,90vw);max-height:85vh;overflow-y:auto;background:#1e1e1e;padding:16px;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);font:13px/1.5 system-ui;z-index:2147483647;opacity:0;pointer-events:none;transition:.2s;color:#eee}
@@ -203,7 +251,7 @@ const createModal = () => {
         CFG.edge = { enabled: $('g-edge-en').checked, width: +$('g-edge-w').value || 40, speed: +$('g-edge-s').value || 3 };
         CFG.pager.enabled = $('p-en').checked;
         Config.save(CFG);
-        close(); toast('✓ Đã lưu!');
+        close();
     };
     div.onclick = e => { if (e.target === div) close(); };
     return div;
@@ -341,7 +389,7 @@ const initEvents = () => {
     }, true);
     window.addEventListener('touchcancel', () => { State.edge.active = false; State.dblTap.last = null; }, true);
 
-    // Pager - chỉ navigate sau khi dừng cuộn
+    // Pager - hiện icon ngay khi thao tác, navigate khi dừng cuộn
     window.addEventListener('wheel', e => {
         if (!CFG.pager.enabled || e.shiftKey || Math.abs(e.deltaX) < Math.abs(e.deltaY) || Math.abs(e.deltaX) < 10) return;
         let el = e.target;
@@ -356,15 +404,17 @@ const initEvents = () => {
             const dir = wheelAcc > 0 ? 1 : -1;
             wheelHops = dir !== wheelDir ? 1 : wheelHops + 1;
             wheelDir = dir; wheelAcc = 0;
-            // Chờ dừng cuộn rồi mới navigate
+            // Hiện icon ngay lập tức
+            showPagerIcon(wheelDir, wheelHops, CFG.pager.hops);
+            // Navigate khi dừng cuộn
             wheelTimer = setTimeout(() => {
+                hidePagerIcon();
                 const isMax = wheelHops >= CFG.pager.hops;
-                goPage(wheelDir, isMax);
+                goPage(wheelDir, wheelHops, isMax);
                 wheelAcc = 0; wheelDir = 0; wheelHops = 0;
             }, 300);
         } else {
-            // Reset nếu dừng cuộn mà chưa đạt threshold
-            wheelTimer = setTimeout(() => { wheelAcc = 0; wheelDir = 0; wheelHops = 0; }, CFG.pager.window);
+            wheelTimer = setTimeout(() => { hidePagerIcon(); wheelAcc = 0; wheelDir = 0; wheelHops = 0; }, CFG.pager.window);
         }
     }, { passive: true });
 
