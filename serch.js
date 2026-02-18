@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Search
 // @namespace    search
-// @version      2.2.4
+// @version      2.2.5
 // @description  Quick Search Bubble - Compact Edition
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
@@ -22,7 +22,7 @@
     const C = {
         KEY: 'qsb.providers.v5',
         OFF: 8, SZ: 28, IMG: 16, MAX: 6, ROW_TEXT: 4, ROW_IMG: 4,
-        TOAST: 1200, SEL: 150, HOVER: 120, HIDE: 220, LONG: 450
+        TOAST: 1200, SEL: 300, HOVER: 120, HIDE: 220, LONG: 450
     };
 
     const DEF = [
@@ -87,7 +87,9 @@
 .qsb-n{font-size:11px;opacity:.5;max-width:300px}`);
 
     // === UI ===
-    let bubble, grid, ctx, hoverImg, timers = {};
+    let bubble, grid, ctx, hoverImg, timers = {}, showTime = 0;
+    let mouseX = 0, mouseY = 0;
+    document.addEventListener('mousemove', e => { mouseX = e.pageX; mouseY = e.pageY; }, { passive: true });
 
     const toast = (msg, x, y) => {
         const el = Object.assign(document.createElement('div'), { className: 'qsb-t', textContent: msg });
@@ -104,7 +106,11 @@
             grid = Object.assign(document.createElement('div'), { className: 'qsb-g' });
             bubble.append(grid);
             bubble.onmouseenter = () => clearTimeout(timers.hh);
-            bubble.onmouseleave = () => { if (!hoverImg?.matches(':hover')) hide(); };
+            bubble.onmouseleave = () => {
+                if (ctx?.type === 'image' && !hoverImg?.matches(':hover')) {
+                    timers.hh = setTimeout(() => { if (!bubble?.matches(':hover')) hide(); }, C.HIDE);
+                }
+            };
             document.body.appendChild(bubble);
         }
         grid.innerHTML = '';
@@ -115,6 +121,7 @@
         });
         grid.style.gridTemplateColumns = `repeat(${cols},${C.SZ}px)`;
         bubble.style.display = 'block';
+        showTime = Date.now();
         const w = bubble.offsetWidth, h = bubble.offsetHeight;
         bubble.style.left = Math.max(6, Math.min(x, scrollX + innerWidth - w - 6)) + 'px';
         bubble.style.top = Math.max(6, Math.min(y, scrollY + innerHeight - h - 6)) + 'px';
@@ -178,8 +185,14 @@
         timers.sel = setTimeout(() => {
             const s = getSelection(), t = String(s).trim(), a = document.activeElement;
             if (!t || a?.tagName === 'INPUT' || a?.tagName === 'TEXTAREA') return;
+            if (ctx?.type === 'text' && ctx.text === t && bubble?.style.display === 'block') return;
             const r = s.getRangeAt(0).getBoundingClientRect();
-            if (r.width > 0) { ctx = { type: 'text', text: t, x: r.left + scrollX, y: r.bottom + scrollY + C.OFF }; show(items(ctx), ctx.x, ctx.y, C.ROW_TEXT); }
+            if (r.width > 0) {
+                const posX = mouseX || (r.left + scrollX);
+                const posY = (mouseY || (r.bottom + scrollY)) + C.OFF;
+                ctx = { type: 'text', text: t, x: posX, y: posY };
+                show(items(ctx), ctx.x, ctx.y, C.ROW_TEXT);
+            }
         }, C.SEL);
     });
 
@@ -217,8 +230,14 @@
     document.addEventListener('pointercancel', cancelLp, { passive: true });
 
     // Dismiss
-    document.addEventListener('mousedown', e => { if (bubble && !bubble.contains(e.target)) hide(); });
-    document.addEventListener('scroll', hide, { capture: true, passive: true });
+    document.addEventListener('mousedown', e => {
+        if (bubble && !bubble.contains(e.target) && Date.now() - showTime > 300) hide();
+    });
+    document.addEventListener('scroll', () => {
+        if (Date.now() - showTime < 400) return;
+        clearTimeout(timers.sc);
+        timers.sc = setTimeout(hide, 200);
+    }, { capture: true, passive: true });
     document.addEventListener('keydown', e => { if (e.key === 'Escape') hide(); });
 
     // Menu
