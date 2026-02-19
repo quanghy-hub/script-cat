@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Search
 // @namespace    search
-// @version      2.3.0
+// @version      2.3.2
 // @description  Quick Search Bubble - Dual Bubble Edition
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
@@ -21,7 +21,7 @@
     // === CONFIG ===
     const C = {
         KEY: 'qsb.providers.v5',
-        OFF: 8, SZ: 28, IMG: 18, MAX: 6, ROW_TEXT: 4, ROW_IMG: 4,
+        OFF: 8, SZ: 28, IMG: 18, MAX: 6, ROW: 4,
         TOAST: 1200, SEL: 300, HOVER: 120, HIDE: 220, LONG: 450
     };
 
@@ -63,6 +63,7 @@
     const IMG_RE = /\.(png|jpe?g|webp|gif|bmp|svg|avif)$/i;
     const fname = u => { try { const n = new URL(u, location.href).pathname.split('/').pop()?.split('?')[0] || 'image'; return IMG_RE.test(n) ? n : n + '.jpg'; } catch { return 'image.jpg'; } };
     const getImg = t => !t?.tagName || t.closest?.('.qsb') ? null : t.tagName === 'IMG' ? t : t.closest?.('picture')?.querySelector('img');
+    const iconHtml = p => p.icon ? `<img src="${p.icon}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'g',textContent:'${p.name[0] || '?'}'}))">` : '<span class="g">🔗</span>';
 
     // === STYLES ===
     GM_addStyle(`
@@ -165,15 +166,15 @@
     };
 
     const buildItems = c => {
-        const ps = providers(), arr = [];
+        const arr = [];
         if (c.type === 'text') {
             arr.push({ t: 'Copy', h: '<span class="g">⧉</span>', f: async () => { toast(await copy(c.text) ? 'Đã chép' : 'Lỗi', c.x, c.y); hideText(); } });
             arr.push({ t: 'Select All', h: '<span class="g">⤢</span>', f: () => { selectAll(); toast('Đã chọn hết', c.x, c.y); } });
-            ps.forEach(p => arr.push({ t: p.name, h: p.icon ? `<img src="${p.icon}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'g',textContent:'${p.name[0] || '?'}'}))">` : '<span class="g">🔗</span>', f: () => open(p.url, c.text) }));
+            providers().forEach(p => arr.push({ t: p.name, h: iconHtml(p), f: () => open(p.url, c.text) }));
         } else if (c.type === 'image') {
             arr.push({ t: 'Tải ảnh', h: '<span class="g">⬇</span>', f: () => { dl(c.img, c.x, c.y); hideImg(); } });
             arr.push({ t: 'Copy URL', h: '<span class="g">⧉</span>', f: async () => { await copy(c.img); toast('Đã chép URL', c.x, c.y); hideImg(); } });
-            IMG_SEARCH.forEach(p => arr.push({ t: p.name, h: p.icon ? `<img src="${p.icon}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'g',textContent:'${p.name[0] || '?'}'}))">` : '<span class="g">🔗</span>', f: () => open(p.url, null, c.img) }));
+            IMG_SEARCH.forEach(p => arr.push({ t: p.name, h: iconHtml(p), f: () => open(p.url, null, c.img) }));
         }
         return arr;
     };
@@ -217,7 +218,7 @@
                 const posX = mouseX || (r.left + scrollX);
                 const posY = (mouseY || (r.bottom + scrollY)) + C.OFF;
                 textCtx = { type: 'text', text: t, x: posX, y: posY };
-                showText(buildItems(textCtx), textCtx.x, textCtx.y, C.ROW_TEXT);
+                showText(buildItems(textCtx), textCtx.x, textCtx.y, C.ROW);
             }
         }, C.SEL);
     });
@@ -227,7 +228,7 @@
         const img = getImg(e.target);
         if (img?.src) {
             imgCtx = { type: 'image', img: img.src, x: e.pageX + 6, y: e.pageY + 6 };
-            showImg(buildItems(imgCtx), imgCtx.x, imgCtx.y, C.ROW_IMG);
+            showImg(buildItems(imgCtx), imgCtx.x, imgCtx.y, C.ROW);
         }
     }, { capture: true });
 
@@ -239,7 +240,7 @@
         timers.hv = setTimeout(() => {
             const src = img.currentSrc || img.src; if (!src) return;
             imgCtx = { type: 'image', img: src, x: e.pageX + 6, y: e.pageY + 6 };
-            showImg(buildItems(imgCtx), imgCtx.x, imgCtx.y, C.ROW_IMG);
+            showImg(buildItems(imgCtx), imgCtx.x, imgCtx.y, C.ROW);
         }, C.HOVER);
     }, { capture: true });
 
@@ -256,7 +257,7 @@
         lp = { img, x: e.pageX, y: e.pageY };
         lpT = setTimeout(() => {
             const src = img.currentSrc || img.src;
-            if (src) { imgCtx = { type: 'image', img: src, x: lp.x + 6, y: lp.y + 6 }; showImg(buildItems(imgCtx), imgCtx.x, imgCtx.y, C.ROW_IMG); }
+            if (src) { imgCtx = { type: 'image', img: src, x: lp.x + 6, y: lp.y + 6 }; showImg(buildItems(imgCtx), imgCtx.x, imgCtx.y, C.ROW); }
         }, C.LONG);
     }, { passive: true });
     document.addEventListener('pointermove', e => { if (lpT && (Math.abs(e.pageX - lp.x) > 5 || Math.abs(e.pageY - lp.y) > 5)) { clearTimeout(lpT); lpT = null; } }, { passive: true });
