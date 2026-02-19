@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Search
 // @namespace    search
-// @version      2.2.5
-// @description  Quick Search Bubble - Compact Edition
+// @version      2.3.0
+// @description  Quick Search Bubble - Dual Bubble Edition
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
 // @run-at       document-end
@@ -21,7 +21,7 @@
     // === CONFIG ===
     const C = {
         KEY: 'qsb.providers.v5',
-        OFF: 8, SZ: 28, IMG: 16, MAX: 6, ROW_TEXT: 4, ROW_IMG: 4,
+        OFF: 8, SZ: 28, IMG: 18, MAX: 6, ROW_TEXT: 4, ROW_IMG: 4,
         TOAST: 1200, SEL: 300, HOVER: 120, HIDE: 220, LONG: 450
     };
 
@@ -66,12 +66,12 @@
 
     // === STYLES ===
     GM_addStyle(`
-.qsb{position:absolute;z-index:2147483646;display:none;background:#1a1a1a;padding:6px;border-radius:8px;box-shadow:0 8px 25px rgba(0,0,0,.5)}
-.qsb-g{display:grid;gap:6px}
-.qsb-i{width:${C.SZ}px;height:${C.SZ}px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s}
+.qsb{position:absolute;z-index:2147483646;display:none;background:#1a1a1a;padding:1px;border-radius:8px;box-shadow:0 8px 25px rgba(0,0,0,.5)}
+.qsb-g{display:grid;gap:1px}
+.qsb-i{width:${C.SZ}px;height:${C.SZ}px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s}
 .qsb-i:hover{background:rgba(255,255,255,.15)}
 .qsb-i img{width:${C.IMG}px;height:${C.IMG}px;object-fit:contain}
-.qsb-i .g{font:15px/1 system-ui;color:#eee}
+.qsb-i .g{font:20px/1 system-ui;color:#eee}
 .qsb-t{position:fixed;padding:6px 12px;background:#222;color:#fff;border-radius:6px;font:12px system-ui;z-index:2147483647;box-shadow:0 5px 15px rgba(0,0,0,.3)}
 .qsb-m{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:2147483647;font-family:system-ui}
 .qsb-p{background:#181818;color:#eee;width:min(650px,94vw);border-radius:12px;padding:20px;box-shadow:0 15px 50px #000}
@@ -86,8 +86,10 @@
 .qsb-b:hover{filter:brightness(1.1)}
 .qsb-n{font-size:11px;opacity:.5;max-width:300px}`);
 
-    // === UI ===
-    let bubble, grid, ctx, hoverImg, timers = {}, showTime = 0;
+    // === UI — DUAL BUBBLE SYSTEM ===
+    let textBubble, textGrid, imgBubble, imgGrid;
+    let textCtx = null, imgCtx = null, hoverImg, timers = {};
+    let showTime = { text: 0, img: 0 };
     let mouseX = 0, mouseY = 0;
     document.addEventListener('mousemove', e => { mouseX = e.pageX; mouseY = e.pageY; }, { passive: true });
 
@@ -98,33 +100,53 @@
         setTimeout(() => el.remove(), C.TOAST);
     };
 
-    const hide = () => { if (bubble) bubble.style.display = 'none'; ctx = null; };
+    const createBubble = () => {
+        const b = Object.assign(document.createElement('div'), { className: 'qsb' });
+        const g = Object.assign(document.createElement('div'), { className: 'qsb-g' });
+        b.append(g);
+        document.body.appendChild(b);
+        return { bubble: b, grid: g };
+    };
 
-    const show = (items, x, y, cols) => {
-        if (!bubble) {
-            bubble = Object.assign(document.createElement('div'), { className: 'qsb' });
-            grid = Object.assign(document.createElement('div'), { className: 'qsb-g' });
-            bubble.append(grid);
-            bubble.onmouseenter = () => clearTimeout(timers.hh);
-            bubble.onmouseleave = () => {
-                if (ctx?.type === 'image' && !hoverImg?.matches(':hover')) {
-                    timers.hh = setTimeout(() => { if (!bubble?.matches(':hover')) hide(); }, C.HIDE);
-                }
-            };
-            document.body.appendChild(bubble);
-        }
+    const hideText = () => { if (textBubble) textBubble.style.display = 'none'; textCtx = null; };
+    const hideImg = () => { if (imgBubble) imgBubble.style.display = 'none'; imgCtx = null; };
+    const hideAll = () => { hideText(); hideImg(); };
+
+    const showBubble = (bubble, grid, itms, x, y, cols, type) => {
         grid.innerHTML = '';
-        items.forEach(it => {
+        itms.forEach(it => {
             const b = Object.assign(document.createElement('div'), { className: 'qsb-i', title: it.t || '', innerHTML: it.h });
             b.onclick = e => { e.preventDefault(); e.stopPropagation(); it.f(); };
             grid.appendChild(b);
         });
         grid.style.gridTemplateColumns = `repeat(${cols},${C.SZ}px)`;
         bubble.style.display = 'block';
-        showTime = Date.now();
+        showTime[type] = Date.now();
         const w = bubble.offsetWidth, h = bubble.offsetHeight;
         bubble.style.left = Math.max(6, Math.min(x, scrollX + innerWidth - w - 6)) + 'px';
         bubble.style.top = Math.max(6, Math.min(y, scrollY + innerHeight - h - 6)) + 'px';
+    };
+
+    const showText = (itms, x, y, cols) => {
+        if (!textBubble) {
+            const r = createBubble();
+            textBubble = r.bubble; textGrid = r.grid;
+        }
+        showBubble(textBubble, textGrid, itms, x, y, cols, 'text');
+    };
+
+    const showImg = (itms, x, y, cols) => {
+        if (!imgBubble) {
+            const r = createBubble();
+            imgBubble = r.bubble; imgGrid = r.grid;
+            imgBubble.onmouseenter = () => clearTimeout(timers.hh);
+            imgBubble.onmouseleave = () => {
+                if (imgCtx && !hoverImg?.matches(':hover')) {
+                    timers.hh = setTimeout(() => { if (!imgBubble?.matches(':hover')) hideImg(); }, C.HIDE);
+                }
+            };
+        }
+        showBubble(imgBubble, imgGrid, itms, x, y, cols, 'img');
     };
 
     const dl = (src, x, y) => {
@@ -139,20 +161,18 @@
     const open = (url, txt, img) => {
         const u = (url || '').replace('{{q}}', enc(txt || '')).replace('{{img}}', img ? encodeURIComponent(img) : '');
         if (u) GM_openInTab(u, { active: true, insert: true });
-        hide();
+        hideAll();
     };
 
-    const items = c => {
+    const buildItems = c => {
         const ps = providers(), arr = [];
         if (c.type === 'text') {
-            // 8 icons: Copy, SelectAll, + 6 providers = 4x2 grid
-            arr.push({ t: 'Copy', h: '<span class="g">⧉</span>', f: async () => { toast(await copy(c.text) ? 'Đã chép' : 'Lỗi', c.x, c.y); hide(); } });
+            arr.push({ t: 'Copy', h: '<span class="g">⧉</span>', f: async () => { toast(await copy(c.text) ? 'Đã chép' : 'Lỗi', c.x, c.y); hideText(); } });
             arr.push({ t: 'Select All', h: '<span class="g">⤢</span>', f: () => { selectAll(); toast('Đã chọn hết', c.x, c.y); } });
             ps.forEach(p => arr.push({ t: p.name, h: p.icon ? `<img src="${p.icon}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'g',textContent:'${p.name[0] || '?'}'}))">` : '<span class="g">🔗</span>', f: () => open(p.url, c.text) }));
         } else if (c.type === 'image') {
-            // 4 icons: Download, Copy URL, Google Lens, Bing Visual = 4x1 grid
-            arr.push({ t: 'Tải ảnh', h: '<span class="g">⬇</span>', f: () => { dl(c.img, c.x, c.y); hide(); } });
-            arr.push({ t: 'Copy URL', h: '<span class="g">⧉</span>', f: async () => { await copy(c.img); toast('Đã chép URL', c.x, c.y); hide(); } });
+            arr.push({ t: 'Tải ảnh', h: '<span class="g">⬇</span>', f: () => { dl(c.img, c.x, c.y); hideImg(); } });
+            arr.push({ t: 'Copy URL', h: '<span class="g">⧉</span>', f: async () => { await copy(c.img); toast('Đã chép URL', c.x, c.y); hideImg(); } });
             IMG_SEARCH.forEach(p => arr.push({ t: p.name, h: p.icon ? `<img src="${p.icon}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'g',textContent:'${p.name[0] || '?'}'}))">` : '<span class="g">🔗</span>', f: () => open(p.url, null, c.img) }));
         }
         return arr;
@@ -180,65 +200,88 @@
     };
 
     // === EVENTS ===
+
+    // Text selection — show textBubble, persist while selection active
     document.addEventListener('selectionchange', () => {
         clearTimeout(timers.sel);
         timers.sel = setTimeout(() => {
             const s = getSelection(), t = String(s).trim(), a = document.activeElement;
-            if (!t || a?.tagName === 'INPUT' || a?.tagName === 'TEXTAREA') return;
-            if (ctx?.type === 'text' && ctx.text === t && bubble?.style.display === 'block') return;
+            if (!t || a?.tagName === 'INPUT' || a?.tagName === 'TEXTAREA') {
+                // Selection cleared — hide text bubble
+                hideText();
+                return;
+            }
+            if (textCtx?.text === t && textBubble?.style.display === 'block') return;
             const r = s.getRangeAt(0).getBoundingClientRect();
             if (r.width > 0) {
                 const posX = mouseX || (r.left + scrollX);
                 const posY = (mouseY || (r.bottom + scrollY)) + C.OFF;
-                ctx = { type: 'text', text: t, x: posX, y: posY };
-                show(items(ctx), ctx.x, ctx.y, C.ROW_TEXT);
+                textCtx = { type: 'text', text: t, x: posX, y: posY };
+                showText(buildItems(textCtx), textCtx.x, textCtx.y, C.ROW_TEXT);
             }
         }, C.SEL);
     });
 
+    // Right-click image
     document.addEventListener('contextmenu', e => {
         const img = getImg(e.target);
-        if (img?.src) { ctx = { type: 'image', img: img.src, x: e.pageX + 6, y: e.pageY + 6 }; show(items(ctx), ctx.x, ctx.y, C.ROW_IMG); }
+        if (img?.src) {
+            imgCtx = { type: 'image', img: img.src, x: e.pageX + 6, y: e.pageY + 6 };
+            showImg(buildItems(imgCtx), imgCtx.x, imgCtx.y, C.ROW_IMG);
+        }
     }, { capture: true });
 
+    // Hover image — show imgBubble independently
     document.addEventListener('pointerenter', e => {
         if (e.pointerType !== 'mouse') return;
         const img = getImg(e.target); if (!img) return;
         hoverImg = img; clearTimeout(timers.hv); clearTimeout(timers.hh);
         timers.hv = setTimeout(() => {
             const src = img.currentSrc || img.src; if (!src) return;
-            ctx = { type: 'image', img: src, x: e.pageX + 6, y: e.pageY + 6 }; show(items(ctx), ctx.x, ctx.y, C.ROW_IMG);
+            imgCtx = { type: 'image', img: src, x: e.pageX + 6, y: e.pageY + 6 };
+            showImg(buildItems(imgCtx), imgCtx.x, imgCtx.y, C.ROW_IMG);
         }, C.HOVER);
     }, { capture: true });
 
     document.addEventListener('pointerleave', e => {
         if (e.pointerType !== 'mouse' || getImg(e.target) !== hoverImg) return;
         clearTimeout(timers.hv);
-        timers.hh = setTimeout(() => { if (!bubble?.matches(':hover')) hide(); }, C.HIDE);
+        timers.hh = setTimeout(() => { if (!imgBubble?.matches(':hover')) hideImg(); }, C.HIDE);
     }, { capture: true });
 
-    // Long press
+    // Long press image
     let lp = {}, lpT;
     document.addEventListener('pointerdown', e => {
         const img = getImg(e.target); if (!img) return;
         lp = { img, x: e.pageX, y: e.pageY };
-        lpT = setTimeout(() => { const src = img.currentSrc || img.src; if (src) { ctx = { type: 'image', img: src, x: lp.x + 6, y: lp.y + 6 }; show(items(ctx), ctx.x, ctx.y, C.ROW_IMG); } }, C.LONG);
+        lpT = setTimeout(() => {
+            const src = img.currentSrc || img.src;
+            if (src) { imgCtx = { type: 'image', img: src, x: lp.x + 6, y: lp.y + 6 }; showImg(buildItems(imgCtx), imgCtx.x, imgCtx.y, C.ROW_IMG); }
+        }, C.LONG);
     }, { passive: true });
     document.addEventListener('pointermove', e => { if (lpT && (Math.abs(e.pageX - lp.x) > 5 || Math.abs(e.pageY - lp.y) > 5)) { clearTimeout(lpT); lpT = null; } }, { passive: true });
     const cancelLp = () => { clearTimeout(lpT); lpT = null; };
     document.addEventListener('pointerup', cancelLp, { passive: true });
     document.addEventListener('pointercancel', cancelLp, { passive: true });
 
-    // Dismiss
+    // Dismiss — only hide bubble that was clicked outside of
     document.addEventListener('mousedown', e => {
-        if (bubble && !bubble.contains(e.target) && Date.now() - showTime > 300) hide();
+        const now = Date.now();
+        if (imgBubble && !imgBubble.contains(e.target) && now - showTime.img > 300) hideImg();
+        if (textBubble && !textBubble.contains(e.target) && now - showTime.text > 300) {
+            // Only hide text bubble if no selection remains after click
+            setTimeout(() => { if (!String(getSelection()).trim()) hideText(); }, 50);
+        }
     });
     document.addEventListener('scroll', () => {
-        if (Date.now() - showTime < 400) return;
+        const now = Date.now();
         clearTimeout(timers.sc);
-        timers.sc = setTimeout(hide, 200);
+        timers.sc = setTimeout(() => {
+            if (now - showTime.img > 400) hideImg();
+            if (now - showTime.text > 400) hideText();
+        }, 200);
     }, { capture: true, passive: true });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') hide(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') hideAll(); });
 
     // Menu
     GM_registerMenuCommand('⚙️ Cấu hình Quick Search', openSettings);
