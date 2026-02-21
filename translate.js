@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Translate
 // @namespace    translate
-// @version      2.7.5
+// @version      2.7.6
 // @description  Swipe/hotkey translate. Video safe zone. Optimized for mobile.
 // @author       you
 // @match        http://*/*
@@ -22,7 +22,7 @@
   const K = 'inline_t_cfg::GLOBAL';
   const def = {
     provider: 'google', geminiKey: '', geminiModel: 'gemini-1.5-flash',
-    hotkey: 'shift', swipeEnabled: true, swipeDir: 'both',
+    hotkey: 'f2', swipeEnabled: true, swipeDir: 'both',
     swipePx: 60, swipeSlopeMax: 0.4,
     fontScale: 0.95, mutedColor: '#00bfff', bgBlend: 'transparent',
     dedupeSeconds: 0.7
@@ -237,7 +237,7 @@
   document.addEventListener('keydown', e => {
     if (/INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
     const k = cfg.hotkey;
-    if ((k === 'shift' && e.shiftKey) || (k === 'f1' && e.code === 'F1') || (k === 'ctrl' && e.ctrlKey)) { if (k === 'f1') e.preventDefault(); act(lx, ly); }
+    if ((k === 'f2' && e.code === 'F2') || (k === 'f4' && e.code === 'F4') || (k === 'f8' && e.code === 'F8')) { e.preventDefault(); act(lx, ly); }
     if (e.shiftKey && e.altKey && e.code === 'KeyX') ui();
   });
 
@@ -269,7 +269,7 @@
     p.innerHTML = `
       <h3>Cài đặt Dịch</h3>
       <div class="ilt-row"><label>Mode</label><select id="pm"><option value="google">Google</option><option value="gemini">Gemini</option></select></div>
-      <div class="ilt-row"><label>Phím tắt</label><select id="ph"><option value="shift">Shift</option><option value="f1">F1</option><option value="ctrl">Ctrl</option></select></div>
+      <div class="ilt-row"><label>Phím tắt</label><select id="ph"><option value="f2">F2</option><option value="f4">F4</option><option value="f8">F8</option></select></div>
       <div class="ilt-row"><label>Vuốt</label><select id="ps"><option value="both">Cả hai</option><option value="right">Sang phải</option><option value="left">Sang trái</option><option value="none">Tắt</option></select></div>
       <div class="ilt-row"><label>Cỡ chữ</label><input id="pfs" type="number" step="0.05" min="0.5" max="2" style="width:60px"></div>
       <div class="ilt-row"><label>Màu chữ</label><input id="pc" type="color"></div>
