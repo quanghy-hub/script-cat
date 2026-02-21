@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Translate
 // @namespace    translate
-// @version      2.7.2
+// @version      2.7.3
 // @description  Swipe/hotkey translate. Video safe zone. Optimized for mobile.
 // @author       you
 // @match        http://*/*
