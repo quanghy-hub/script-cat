@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Translate
 // @namespace    translate
-// @version      2.7.3
+// @version      2.7.5
 // @description  Swipe/hotkey translate. Video safe zone. Optimized for mobile.
 // @author       you
 // @match        http://*/*
@@ -237,7 +237,7 @@
   document.addEventListener('keydown', e => {
     if (/INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
     const k = cfg.hotkey;
-    if ((k === 'shift' && e.shiftKey) || (k === '0' && e.code === 'Digit0') || (k === 'ctrl' && e.ctrlKey)) act(lx, ly);
+    if ((k === 'shift' && e.shiftKey) || (k === 'f1' && e.code === 'F1') || (k === 'ctrl' && e.ctrlKey)) { if (k === 'f1') e.preventDefault(); act(lx, ly); }
     if (e.shiftKey && e.altKey && e.code === 'KeyX') ui();
   });
 
@@ -269,7 +269,7 @@
     p.innerHTML = `
       <h3>Cài đặt Dịch</h3>
       <div class="ilt-row"><label>Mode</label><select id="pm"><option value="google">Google</option><option value="gemini">Gemini</option></select></div>
-      <div class="ilt-row"><label>Phím tắt</label><select id="ph"><option value="shift">Shift</option><option value="0">Số 0</option><option value="ctrl">Ctrl</option></select></div>
+      <div class="ilt-row"><label>Phím tắt</label><select id="ph"><option value="shift">Shift</option><option value="f1">F1</option><option value="ctrl">Ctrl</option></select></div>
       <div class="ilt-row"><label>Vuốt</label><select id="ps"><option value="both">Cả hai</option><option value="right">Sang phải</option><option value="left">Sang trái</option><option value="none">Tắt</option></select></div>
       <div class="ilt-row"><label>Cỡ chữ</label><input id="pfs" type="number" step="0.05" min="0.5" max="2" style="width:60px"></div>
       <div class="ilt-row"><label>Màu chữ</label><input id="pc" type="color"></div>
