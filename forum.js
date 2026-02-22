@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Forum
 // @namespace    forum
-// @version      1.3.4
+// @version      1.3.5
 // @description  Chia 2 cột Masonry + dàn rộng full màn hình
 // @match        *://*/*
 // @run-at       document-start

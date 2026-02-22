@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YSub
 // @namespace    yt
-// @version      3.0.0
+// @version      3.0.1
 // @description  Bilingual Subtitles with Settings and Drag Support
 // @match        https://www.youtube.com/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/yt.js

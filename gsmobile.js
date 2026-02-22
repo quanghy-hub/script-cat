@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MGestures
 // @namespace    mgestures
-// @version      1.2.6
+// @version      1.2.7
 // @description  Long-press mở link, Double-tap đóng tab, Edge swipe scroll
 // @match        *://*/*
 // @exclude      *://mail.google.com/*

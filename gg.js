@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ggbutton
 // @description  Google Search
-// @version      5.1.5
+// @version      5.1.6
 // @match        *://www.google.*/search*
 // @include      /^https?:\/\/www\.google\.[a-z.]+\/search.*/
 // @run-at       document-end
