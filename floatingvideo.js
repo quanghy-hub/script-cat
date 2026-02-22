@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Floating
 // @namespace    
-// @version      5.9.9
+// @version      5.9.10
 // @description  Floating video player optimized for mobile with video rotation
 // @author       Claude
 // @match        *://*/*
@@ -145,7 +145,6 @@
             -webkit-appearance: none; cursor: pointer; touch-action: none;
             outline: none; border: none;
         }
-        #fvp-seek:focus { outline: none; }
         #fvp-seek::-webkit-slider-runnable-track { height: 10px; background: transparent; border-radius: 5px; }
         #fvp-seek::-webkit-slider-thumb {
             -webkit-appearance: none; width: 20px; height: 20px; margin-top: -5px;
@@ -267,6 +266,48 @@
     const onPointer = (el, fn, passive = false) => { el?.addEventListener('touchstart', fn, { passive }); el?.addEventListener('mousedown', fn); };
 
     // ============================================
+    // PERSISTENCE (localStorage)
+    // ============================================
+    const STORAGE_KEY_LAYOUT = 'fvp-layout';
+    const STORAGE_KEY_ICON = 'fvp-icon-pos';
+
+    const saveLayout = () => {
+        if (!box || box.style.display === 'none') return;
+        try {
+            localStorage.setItem(STORAGE_KEY_LAYOUT, JSON.stringify({
+                top: box.style.top, left: box.style.left,
+                width: box.style.width, height: box.style.height,
+                borderRadius: box.style.borderRadius
+            }));
+        } catch (e) { }
+    };
+
+    const loadLayout = () => {
+        try {
+            const d = JSON.parse(localStorage.getItem(STORAGE_KEY_LAYOUT));
+            if (d && d.width && d.height) return d;
+        } catch (e) { }
+        return null;
+    };
+
+    const saveIconPos = () => {
+        if (!icon) return;
+        try {
+            localStorage.setItem(STORAGE_KEY_ICON, JSON.stringify({
+                top: icon.style.top, left: icon.style.left
+            }));
+        } catch (e) { }
+    };
+
+    const loadIconPos = () => {
+        try {
+            const d = JSON.parse(localStorage.getItem(STORAGE_KEY_ICON));
+            if (d && d.top && d.left) return d;
+        } catch (e) { }
+        return null;
+    };
+
+    // ============================================
     // STATE
     // ============================================
     let box, icon, menu, curVid, origPar, ph;
@@ -299,7 +340,6 @@
         if (rotationAngle) transforms.push(`rotate(${rotationAngle}deg)`);
         if (zoom !== 1) transforms.push(`scale(${zoom})`);
         curVid.style.transform = transforms.join(' ');
-        curVid.style.transformOrigin = 'center';
         curVid.style.objectFit = (rotationAngle === 90 || rotationAngle === 270) ? 'contain' : FIT_MODES[fitIdx];
     };
 
@@ -347,7 +387,7 @@
         cancelAnimationFrame(state.rafId);
         origPar?.replaceChild(curVid, ph);
         Object.assign(curVid.style, { width: '', height: '', objectFit: '', objectPosition: '', transform: '' });
-        curVid.ontimeupdate = curVid.onloadedmetadata = curVid.onended = curVid.onplay = curVid.onpause = null;
+        curVid.onloadedmetadata = curVid.onended = curVid.onplay = curVid.onpause = null;
         box.style.display = 'none';
         zoomIdx = 0; rotationAngle = 0; state.origW = state.origH = 0;
         curVid = null;
@@ -369,7 +409,7 @@
         wrapper.innerHTML = '';
         wrapper.appendChild(v);
 
-        Object.assign(v.style, { objectFit: FIT_MODES[fitIdx], objectPosition: 'center' });
+        v.style.objectFit = FIT_MODES[fitIdx];
         zoomIdx = 0; rotationAngle = 0;
         applyTransform();
 
@@ -382,22 +422,31 @@
         box.style.display = 'flex';
         menu.style.display = 'none';
 
-        // Set initial size based on orientation
-        const isPortrait = innerHeight > innerWidth;
-        if (isPortrait) {
-            box.style.width = `${innerWidth}px`;
-            box.style.height = `${innerHeight}px`;
-            box.style.top = '0px';
-            box.style.left = '0px';
-            box.style.borderRadius = '0';
+        // Restore saved layout or use default
+        const saved = loadLayout();
+        if (saved) {
+            box.style.width = saved.width;
+            box.style.height = saved.height;
+            box.style.top = saved.top;
+            box.style.left = saved.left;
+            box.style.borderRadius = saved.borderRadius || '12px';
         } else {
-            const w = Math.floor(innerWidth * 0.5);
-            const h = innerHeight - 40;
-            box.style.width = `${w}px`;
-            box.style.height = `${h}px`;
-            box.style.top = '20px';
-            box.style.left = `${Math.floor((innerWidth - w) / 2)}px`;
-            box.style.borderRadius = '12px';
+            const isPortrait = innerHeight > innerWidth;
+            if (isPortrait) {
+                box.style.width = `${innerWidth}px`;
+                box.style.height = `${innerHeight}px`;
+                box.style.top = '0px';
+                box.style.left = '0px';
+                box.style.borderRadius = '0';
+            } else {
+                const w = Math.floor(innerWidth * 0.5);
+                const h = innerHeight - 40;
+                box.style.width = `${w}px`;
+                box.style.height = `${h}px`;
+                box.style.top = '20px';
+                box.style.left = `${Math.floor((innerWidth - w) / 2)}px`;
+                box.style.borderRadius = '12px';
+            }
         }
 
         // Seek bar update loop
@@ -507,7 +556,11 @@
         };
 
         const end = e => {
-            if (state.isIconDrag && Math.hypot(getCoord(e).x - state.startX, getCoord(e).y - state.startY) < 8) toggleMenu();
+            if (state.isIconDrag) {
+                if (Math.hypot(getCoord(e).x - state.startX, getCoord(e).y - state.startY) < 8) toggleMenu();
+                else saveIconPos();
+            }
+            if (state.isDrag || state.isResize) saveLayout();
             state.isDrag = state.isResize = state.isIconDrag = false;
         };
 
@@ -608,7 +661,10 @@
             <span id="fvp-badge" style="display:none">0</span>
         `);
         icon.id = 'fvp-master-icon';
-        Object.assign(icon.style, { top: `${(innerHeight - 48) / 2}px`, left: '12px', display: document.querySelectorAll('video').length ? 'flex' : 'none' });
+        const savedIcon = loadIconPos();
+        const iconTop = savedIcon ? savedIcon.top : `${(innerHeight - 48) / 2}px`;
+        const iconLeft = savedIcon ? savedIcon.left : '12px';
+        Object.assign(icon.style, { top: iconTop, left: iconLeft, display: document.querySelectorAll('video').length ? 'flex' : 'none' });
         document.body.appendChild(icon);
 
         // Menu
