@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Translate
 // @namespace    translate
-// @version      2.7.6
+// @version      2.7.9
 // @description  Swipe/hotkey translate. Video safe zone. Optimized for mobile.
 // @author       you
 // @match        http://*/*
@@ -56,7 +56,7 @@
   /* ================= TEXT DETECTION ================= */
   const isReddit = location.hostname.includes('reddit.com');
   const R_DEEP = ['div[id$="-post-rtjson-content"]', '.md', '[data-post-click-location="text-body"] > div', '[slot="text-body"] div', '[slot="text-body"]'];
-  const VALID_TAGS = /^(P|LI|H[1-6]|BLOCKQUOTE|TD|TH|PRE|FIGCAPTION|DIV|SPAN|A|ARTICLE|LABEL)$/;
+  const VALID_TAGS = /^(P|LI|H[1-6]|BLOCKQUOTE|TD|TH|PRE|FIGCAPTION|DIV|SPAN|A|ARTICLE|LABEL|SECTION|ASIDE|FIGURE|DETAILS|SUMMARY|CODE|NAV|HEADER|FOOTER|MAIN|MARK)$/;
 
   function getBlock(el) {
     if (!el || el === document.body) return null;
@@ -147,9 +147,34 @@
     return w;
   }
 
+  /** Check if node or parent clips overflow (translation would be hidden) */
+  function isClipped(el) {
+    for (let n = el, i = 0; n && n !== document.body && i < 3; n = n.parentElement, i++) {
+      const s = getComputedStyle(n);
+      if (/hidden|scroll|auto|clip/.test(s.overflow + s.overflowY)) return true;
+      if (s.maxHeight && s.maxHeight !== 'none') return true;
+    }
+    return false;
+  }
+
+  /** Insert translation box: after node if clipped, else as child */
+  function insertTrans(node, w) {
+    if (isClipped(node)) {
+      node.insertAdjacentElement('afterend', w);
+    } else {
+      node.appendChild(w);
+    }
+  }
+
+  /** Find existing translation (child or next sibling) */
+  function findTrans(node) {
+    return node.querySelector(':scope > .ilt-trans-container')
+      || (node.nextElementSibling?.classList.contains('ilt-trans-container') ? node.nextElementSibling : null);
+  }
+
   async function trans(txt, node) {
     // Toggle: remove existing translation
-    const existing = node.querySelector(':scope > .ilt-trans-container');
+    const existing = findTrans(node);
     if (existing) { existing.remove(); return; }
 
     if (!hasMeaningful(txt)) return;
@@ -160,7 +185,7 @@
     if (cached?.result) {
       if (now - cached.ts < cfg.dedupeSeconds * 1000) return;
       cached.ts = now;
-      node.appendChild(mkTransBox(cached.result));
+      insertTrans(node, mkTransBox(cached.result));
       return;
     }
 
@@ -169,7 +194,7 @@
     cache.set(txt, { result: null, ts: now });
 
     const w = mkTransBox();
-    node.appendChild(w);
+    insertTrans(node, w);
 
     try {
       let res;

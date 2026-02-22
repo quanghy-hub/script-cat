@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Forum
 // @namespace    forum
-// @version      1.3.3
+// @version      1.3.4
 // @description  Chia 2 cột Masonry + dàn rộng full màn hình
 // @match        *://*/*
 // @run-at       document-start
@@ -57,10 +57,12 @@ html.fs-active .p-body-sidebar,html.fs-active aside.p-body-sidebar,html.fs-activ
 html.fs-active .p-body-inner{max-width:100%!important;width:100%!important;padding:0!important}
 html.fs-active .p-body-main,html.fs-active .p-body-main--withSidebar{display:block!important}
 html.fs-active .p-body-content{width:100%!important;max-width:100%!important}
-.fs-wrapper{display:flex!important;gap:var(--fs-gap,1px);align-items:flex-start}
-.fs-column{flex:1;min-width:0;display:flex;flex-direction:column;gap:var(--fs-gap,1px)}
-.fs-column>*{margin:0!important}
+.fs-wrapper{display:flex!important;gap:var(--fs-gap,1px);align-items:flex-start;max-width:100%!important;width:100%!important;overflow:hidden;box-sizing:border-box}
+.fs-column{flex:1;min-width:0;max-width:50%;display:flex;flex-direction:column;gap:var(--fs-gap,1px);overflow:hidden;word-break:break-word;box-sizing:border-box}
+.fs-column>*{margin:0!important;max-width:100%!important;overflow:hidden;box-sizing:border-box}
 .fs-wrapper img,.fs-wrapper video,.fs-wrapper iframe{max-width:100%!important;height:auto!important}
+.fs-wrapper pre,.fs-wrapper code,.fs-wrapper table,.fs-wrapper blockquote{max-width:100%!important;overflow:auto!important;box-sizing:border-box!important}
+.fs-wrapper *{min-width:0!important}
 .fs-original-hidden{display:none!important}`;
 
 const SELECTORS = [
