@@ -65,9 +65,8 @@
             color: #9aa0a6;
             padding: 4px 2px 2px;
             font-weight: 600;
-            border-top: 1px solid #333;
         }
-        .gseb-header:first-child { border-top: none; padding-top: 0; }
+        .gseb-header:first-child { padding-top: 0; }
         
         .gseb-cell {
             width: ${CONFIG.CELL_SIZE}px;

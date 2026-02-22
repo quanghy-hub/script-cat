@@ -154,14 +154,14 @@ const createModal = () => {
 #fs-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2147483646;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
 #fs-overlay.open{opacity:1;pointer-events:auto}
 #fs-panel{background:#1e1e1e;padding:20px;border-radius:14px;width:min(300px,90vw);color:#eee;font:14px/1.5 system-ui;box-shadow:0 10px 40px rgba(0,0,0,.5)}
-.fs-head{margin-bottom:12px;border-bottom:1px solid #333;padding-bottom:10px}
+.fs-head{margin-bottom:12px;padding-bottom:10px}
 .fs-title{font-weight:700;font-size:15px;margin:0;color:#fff}
 .fs-sub{font-size:11px;color:#888;margin-top:3px}
 .fs-group{background:#2a2a2a;padding:10px 12px;border-radius:10px;margin-bottom:10px}
 .fs-row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
 .fs-row:last-child{margin-bottom:0}
 .fs-label{flex:1;color:#ddd}
-.fs-input{border:1px solid #444;background:#333;color:#fff;border-radius:5px;padding:4px 8px;width:60px;text-align:right;font:inherit}
+.fs-input{border:none;background:#333;color:#fff;border-radius:5px;padding:4px 8px;width:60px;text-align:right;font:inherit}
 .fs-switch{position:relative;width:38px;height:20px;flex-shrink:0}
 .fs-switch input{opacity:0;width:0;height:0}
 .fs-slider{position:absolute;cursor:pointer;inset:0;background:#555;transition:.2s;border-radius:20px}

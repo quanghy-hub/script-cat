@@ -179,14 +179,14 @@ const injectStyles = () => {
         #ges-overlay.open{opacity:1;pointer-events:auto}
         #ges-panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.95);width:min(360px,90vw);max-height:85vh;overflow-y:auto;background:#1e1e1e;padding:16px;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);font:13px/1.5 system-ui;z-index:2147483647;opacity:0;pointer-events:none;transition:.2s;color:#eee}
         #ges-overlay.open #ges-panel{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto}
-        .ges-head{margin-bottom:12px;border-bottom:1px solid #333;padding-bottom:10px}
+        .ges-head{margin-bottom:12px;padding-bottom:10px}
         .ges-title{font-weight:700;font-size:15px;margin:0;color:#fff}
         .ges-group{background:#2a2a2a;padding:10px 12px;border-radius:10px;margin-bottom:10px}
         .ges-group-title{font-size:10px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:8px;letter-spacing:.5px}
         .ges-row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
         .ges-row:last-child{margin-bottom:0}
         .ges-label{flex:1;color:#ddd}
-        .ges-input,.ges-select{border:1px solid #444;background:#333;color:#fff;border-radius:5px;padding:4px 8px;width:70px;text-align:right;font:inherit}
+        .ges-input,.ges-select{border:none;background:#333;color:#fff;border-radius:5px;padding:4px 8px;width:70px;text-align:right;font:inherit}
         .ges-select{width:auto;text-align:left}
         .ges-switch{position:relative;width:36px;height:20px;flex-shrink:0}
         .ges-switch input{opacity:0;width:0;height:0}

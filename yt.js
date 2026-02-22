@@ -280,14 +280,14 @@
 
                 #yt-subtitle-settings {
                     position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                    background: rgba(28,28,28,0.95); border-radius: 12px; padding: 20px;
-                    z-index: 99999; min-width: 280px; color: #fff;
-                    font-family: 'Roboto', Arial, sans-serif;
-                    box-shadow: 0 8px 32px rgba(0,0,0,0.5); backdrop-filter: blur(10px);
+                    background: #1e1e1e; border-radius: 14px; padding: 16px;
+                    z-index: 99999; min-width: 280px; color: #eee;
+                    font: 13px/1.5 system-ui;
+                    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
                 }
                 #yt-subtitle-settings h3 {
-                    margin: 0 0 16px; font-size: 16px; font-weight: 500;
-                    display: flex; justify-content: space-between; align-items: center;
+                    margin: 0 0 12px; font-size: 15px; font-weight: 700;
+                    display: flex; justify-content: space-between; align-items: center; color: #fff;
                 }
                 #yt-subtitle-settings .close-btn {
                     background: none; border: none; color: #aaa;
@@ -296,33 +296,33 @@
                 #yt-subtitle-settings .close-btn:hover { color: #fff; }
                 #yt-subtitle-settings .setting-row {
                     display: flex; justify-content: space-between; align-items: center;
-                    margin-bottom: 12px; font-size: 14px;
+                    margin-bottom: 8px; font-size: 13px;
                 }
-                #yt-subtitle-settings label { color: #aaa; }
-                #yt-subtitle-settings input[type="range"] { width: 100px; accent-color: #ff0000; }
+                #yt-subtitle-settings label { color: #ddd; }
+                #yt-subtitle-settings input[type="range"] { width: 100px; accent-color: #007AFF; }
                 #yt-subtitle-settings input[type="color"] {
-                    width: 40px; height: 28px; border: none; border-radius: 4px; cursor: pointer;
+                    width: 40px; height: 28px; border: none; border-radius: 5px; cursor: pointer;
                 }
                 #yt-subtitle-settings select {
-                    background: #333; color: #fff; border: 1px solid #555;
-                    border-radius: 4px; padding: 4px 8px;
+                    background: #333; color: #fff; border: none;
+                    border-radius: 5px; padding: 4px 8px;
                 }
                 #yt-subtitle-settings .toggle {
-                    position: relative; width: 40px; height: 20px;
-                    background: #555; border-radius: 10px; cursor: pointer; transition: background 0.2s;
+                    position: relative; width: 36px; height: 20px;
+                    background: #555; border-radius: 20px; cursor: pointer; transition: background 0.2s;
                 }
-                #yt-subtitle-settings .toggle.active { background: #ff0000; }
+                #yt-subtitle-settings .toggle.active { background: #007AFF; }
                 #yt-subtitle-settings .toggle::after {
                     content: ''; position: absolute; width: 16px; height: 16px;
                     background: #fff; border-radius: 50%; top: 2px; left: 2px; transition: left 0.2s;
                 }
-                #yt-subtitle-settings .toggle.active::after { left: 22px; }
+                #yt-subtitle-settings .toggle.active::after { left: 18px; }
                 #yt-subtitle-settings .reset-position-btn {
-                    background: #555; color: #fff; border: none; border-radius: 4px;
-                    padding: 6px 12px; cursor: pointer; font-size: 13px;
-                    margin-top: 8px; width: 100%; transition: background 0.2s;
+                    background: #333; color: #fff; border: none; border-radius: 6px;
+                    padding: 8px 16px; cursor: pointer; font-size: 12px; font-weight: 600;
+                    margin-top: 8px; width: 100%; transition: background 0.15s;
                 }
-                #yt-subtitle-settings .reset-position-btn:hover { background: #666; }
+                #yt-subtitle-settings .reset-position-btn:hover { background: #444; }
             `;
         }
     };

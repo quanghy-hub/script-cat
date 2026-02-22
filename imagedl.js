@@ -49,7 +49,7 @@
     // ==================== STYLES ====================
     const STYLES = `
         .imgdl-overlay{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.95);font-family:system-ui,-apple-system,sans-serif;color:#fff;display:flex;flex-direction:column}
-        .imgdl-header{padding:12px 20px;background:rgba(255,255,255,.05);backdrop-filter:blur(10px);display:flex;flex-direction:column;gap:10px;border-bottom:1px solid rgba(255,255,255,.1)}
+        .imgdl-header{padding:12px 20px;background:rgba(255,255,255,.05);backdrop-filter:blur(10px);display:flex;flex-direction:column;gap:10px}
         .imgdl-header-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
         .imgdl-btn{padding:8px 16px;border:none;border-radius:6px;background:rgba(255,255,255,.1);color:#fff;cursor:pointer;font-size:13px;transition:all .2s}
         .imgdl-btn:hover{background:rgba(255,255,255,.2)}
@@ -58,8 +58,8 @@
         .imgdl-btn.close{width:36px;height:36px;padding:0;border-radius:50%;font-size:18px;margin-left:auto}
         .imgdl-checkbox{width:18px;height:18px;accent-color:#3b82f6;cursor:pointer;flex-shrink:0}
         .imgdl-info{color:rgba(255,255,255,.6);font-size:13px;white-space:nowrap}
-        .imgdl-input{padding:6px 10px;border:1px solid rgba(255,255,255,.2);border-radius:6px;background:rgba(255,255,255,.05);color:#fff;font-size:13px;width:100px}
-        .imgdl-input:focus{outline:none;border-color:#3b82f6}
+        .imgdl-input{padding:6px 10px;border:none;border-radius:6px;background:rgba(255,255,255,.05);color:#fff;font-size:13px;width:100px}
+        .imgdl-input:focus{outline:2px solid #3b82f6;outline-offset:-2px}
         .imgdl-input.pixel{width:70px;text-align:center}
         .imgdl-grid{flex:1;overflow:auto;padding:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));grid-auto-rows:180px;gap:16px;align-content:start}
         .imgdl-item{position:relative;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.05);cursor:pointer;transition:all .2s;width:100%;height:100%}

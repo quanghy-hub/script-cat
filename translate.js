@@ -34,11 +34,27 @@
   const sty = document.createElement('style');
   sty.textContent = `
     :root{--ilt-fs:${cfg.fontScale}em;--ilt-fg:${cfg.mutedColor};--ilt-bg:${cfg.bgBlend}}
-    .ilt-panel{position:fixed;z-index:2147483647;top:10px;right:10px;background:#1a1a1ae6;border:1px solid #444;border-radius:12px;padding:12px;color:#eee;font:13px system-ui;max-width:320px;backdrop-filter:blur(6px)}
-    .ilt-row{display:flex;justify-content:space-between;margin:8px 0;gap:10px}
-    .ilt-panel input,.ilt-panel select{background:#333;border:1px solid #555;color:#fff;border-radius:4px;padding:4px;max-width:140px}
-    .ilt-btn{width:100%;margin-top:10px;padding:8px;background:#0079d3;border:none;border-radius:4px;color:#fff;cursor:pointer}
-    .ilt-trans-container{margin:8px 0;width:100%;animation:iF .2s;border-top:1px dashed #444;padding-top:6px}
+    .ilt-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2147483646;opacity:0;pointer-events:none;transition:opacity .2s}
+    .ilt-overlay.open{opacity:1;pointer-events:auto}
+    .ilt-panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.95);width:min(320px,90vw);max-height:85vh;overflow-y:auto;background:#1e1e1e;padding:16px;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);font:13px/1.5 system-ui;z-index:2147483647;opacity:0;pointer-events:none;transition:.2s;color:#eee}
+    .ilt-overlay.open .ilt-panel{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto}
+    .ilt-title{font-weight:700;font-size:15px;margin:0 0 12px;color:#fff}
+    .ilt-group{background:#2a2a2a;padding:10px 12px;border-radius:10px;margin-bottom:10px}
+    .ilt-group-title{font-size:10px;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:8px;letter-spacing:.5px}
+    .ilt-row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+    .ilt-row:last-child{margin-bottom:0}
+    .ilt-label{flex:1;color:#ddd}
+    .ilt-panel input,.ilt-panel select{background:#333;border:none;color:#fff;border-radius:5px;padding:4px 8px;font:inherit}
+    .ilt-panel input[type="number"]{width:70px;text-align:right}
+    .ilt-panel input[type="color"]{width:40px;height:28px;padding:2px;cursor:pointer}
+    .ilt-panel input[type="text"],.ilt-panel input[type="password"]{width:100%}
+    .ilt-panel select{width:auto}
+    .ilt-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+    .ilt-btn{border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px;background:#333;color:#fff;transition:.15s}
+    .ilt-btn:hover{background:#444}
+    .ilt-btn.primary{background:#007AFF}
+    .ilt-btn.primary:hover{background:#0066d6}
+    .ilt-trans-container{margin:8px 0;width:100%;animation:iF .2s;padding-top:6px}
     .ilt-trans{padding:6px 12px;background:var(--ilt-bg);color:var(--ilt-fg);font:italic var(--ilt-fs)/1.6 system-ui;white-space:pre-wrap}
     .ilt-meta{font-size:.75em;opacity:.6}
     @keyframes iF{from{transform:translateY(-5px);opacity:0}to{transform:none;opacity:1}}
@@ -286,51 +302,66 @@
   }, { passive: true });
 
   /* ================= SETTINGS UI ================= */
+  let settingsOverlay = null;
+
   function ui() {
-    if (document.querySelector('.ilt-panel')) return;
+    if (settingsOverlay) { settingsOverlay.classList.add('open'); return; }
 
-    const p = document.createElement('div');
-    p.className = 'ilt-panel';
-    p.innerHTML = `
-      <h3>Cài đặt Dịch</h3>
-      <div class="ilt-row"><label>Mode</label><select id="pm"><option value="google">Google</option><option value="gemini">Gemini</option></select></div>
-      <div class="ilt-row"><label>Phím tắt</label><select id="ph"><option value="f2">F2</option><option value="f4">F4</option><option value="f8">F8</option></select></div>
-      <div class="ilt-row"><label>Vuốt</label><select id="ps"><option value="both">Cả hai</option><option value="right">Sang phải</option><option value="left">Sang trái</option><option value="none">Tắt</option></select></div>
-      <div class="ilt-row"><label>Cỡ chữ</label><input id="pfs" type="number" step="0.05" min="0.5" max="2" style="width:60px"></div>
-      <div class="ilt-row"><label>Màu chữ</label><input id="pc" type="color"></div>
-      <div class="ilt-row"><label>Model</label><input id="pmd" type="text" placeholder="gemini-1.5-flash" style="width:100%"></div>
-      <div class="ilt-row"><input id="pk" type="password" placeholder="Gemini API Key" style="width:100%"></div>
-      <button class="ilt-btn" id="sv">Lưu & Áp dụng</button>
-    `;
-    document.body.appendChild(p);
+    const ov = document.createElement('div');
+    ov.className = 'ilt-overlay';
+    ov.innerHTML = `
+      <div class="ilt-panel">
+        <h3 class="ilt-title">🌐 Cài đặt Dịch</h3>
+        <div class="ilt-group">
+          <div class="ilt-group-title">⚙️ Chung</div>
+          <div class="ilt-row"><span class="ilt-label">Mode</span><select id="ilt-pm"><option value="google">Google</option><option value="gemini">Gemini</option></select></div>
+          <div class="ilt-row"><span class="ilt-label">Phím tắt</span><select id="ilt-ph"><option value="f2">F2</option><option value="f4">F4</option><option value="f8">F8</option></select></div>
+          <div class="ilt-row"><span class="ilt-label">Vuốt</span><select id="ilt-ps"><option value="both">Cả hai</option><option value="right">Sang phải</option><option value="left">Sang trái</option><option value="none">Tắt</option></select></div>
+        </div>
+        <div class="ilt-group">
+          <div class="ilt-group-title">🎨 Giao diện</div>
+          <div class="ilt-row"><span class="ilt-label">Cỡ chữ</span><input id="ilt-pfs" type="number" step="0.05" min="0.5" max="2"></div>
+          <div class="ilt-row"><span class="ilt-label">Màu chữ</span><input id="ilt-pc" type="color"></div>
+        </div>
+        <div class="ilt-group">
+          <div class="ilt-group-title">🤖 Gemini</div>
+          <div class="ilt-row"><span class="ilt-label">Model</span><input id="ilt-pmd" type="text" placeholder="gemini-1.5-flash"></div>
+          <div class="ilt-row"><input id="ilt-pk" type="password" placeholder="Gemini API Key" style="width:100%"></div>
+        </div>
+        <div class="ilt-actions"><button class="ilt-btn" id="ilt-close">Đóng</button><button class="ilt-btn primary" id="ilt-save">Lưu</button></div>
+      </div>`;
+    document.body.appendChild(ov);
+    settingsOverlay = ov;
 
-    const $ = i => p.querySelector(i);
-    $('#pm').value = cfg.provider;
-    $('#ph').value = cfg.hotkey;
-    $('#ps').value = cfg.swipeEnabled ? cfg.swipeDir : 'none';
-    $('#pk').value = cfg.geminiKey;
-    $('#pmd').value = cfg.geminiModel;
-    $('#pfs').value = cfg.fontScale;
-    $('#pc').value = cfg.mutedColor;
+    const $ = i => ov.querySelector('#' + i);
+    $('ilt-pm').value = cfg.provider;
+    $('ilt-ph').value = cfg.hotkey;
+    $('ilt-ps').value = cfg.swipeEnabled ? cfg.swipeDir : 'none';
+    $('ilt-pk').value = cfg.geminiKey;
+    $('ilt-pmd').value = cfg.geminiModel;
+    $('ilt-pfs').value = cfg.fontScale;
+    $('ilt-pc').value = cfg.mutedColor;
 
-    $('#sv').onclick = () => {
-      cfg.provider = $('#pm').value;
-      cfg.hotkey = $('#ph').value;
-      cfg.geminiKey = $('#pk').value;
-      cfg.geminiModel = $('#pmd').value.trim() || 'gemini-1.5-flash';
-      cfg.fontScale = parseFloat($('#pfs').value) || 0.95;
-      cfg.mutedColor = $('#pc').value;
+    const close = () => ov.classList.remove('open');
+    $('ilt-close').onclick = close;
+    $('ilt-save').onclick = () => {
+      cfg.provider = $('ilt-pm').value;
+      cfg.hotkey = $('ilt-ph').value;
+      cfg.geminiKey = $('ilt-pk').value;
+      cfg.geminiModel = $('ilt-pmd').value.trim() || 'gemini-1.5-flash';
+      cfg.fontScale = parseFloat($('ilt-pfs').value) || 0.95;
+      cfg.mutedColor = $('ilt-pc').value;
 
-      const s = $('#ps').value;
+      const s = $('ilt-ps').value;
       cfg.swipeEnabled = s !== 'none';
       if (s !== 'none') cfg.swipeDir = s;
 
       save();
-      applyCSSVars(); // Realtime update — no reload needed
-      p.remove();
+      applyCSSVars();
+      close();
     };
-
-    p.onclick = e => { if (e.target === p) p.remove(); };
+    ov.onclick = e => { if (e.target === ov) close(); };
+    requestAnimationFrame(() => ov.classList.add('open'));
   }
 
   GM_registerMenuCommand('Settings', ui);
