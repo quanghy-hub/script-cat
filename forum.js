@@ -175,7 +175,7 @@ input:checked+.fs-slider:before{transform:translateX(18px)}
 .fs-btn.primary:hover{background:#0066d6}
 </style>
 <div id="fs-panel">
-<div class="fs-head"><h3 class="fs-title">📐 Forum Split</h3><div class="fs-sub">${HOST}</div></div>
+<div class="fs-head"><h3 class="fs-title">⚙️ Forum Split</h3><div class="fs-sub">${HOST}</div></div>
 <div class="fs-group">
 <div class="fs-row"><span class="fs-label">Bật Split 2 cột</span><label class="fs-switch"><input type="checkbox" id="fs-en"><span class="fs-slider"></span></label></div>
 <div class="fs-row"><span class="fs-label">Dàn rộng Full</span><label class="fs-switch"><input type="checkbox" id="fs-wide"><span class="fs-slider"></span></label></div>
@@ -228,8 +228,7 @@ const init = () => {
         observer.observe(document.body, { childList: true, subtree: true });
     }, CFG.initDelay);
     let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(update, 200); });
-    document.addEventListener('keydown', e => { if (e.altKey && e.shiftKey && e.code === 'KeyS') { e.preventDefault(); openSettings(); } });
-    GM_registerMenuCommand('📐 Cài đặt (Alt+Shift+S)', openSettings);
+    GM_registerMenuCommand('⚙️ Cài đặt', openSettings);
     GM_registerMenuCommand('🔄 Toggle', toggle);
 };
 

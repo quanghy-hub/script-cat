@@ -188,7 +188,7 @@
         }).join('');
 
         const m = Object.assign(document.createElement('div'), { className: 'qsb-m' });
-        m.innerHTML = `<div class="qsb-p"><h3>Cấu hình Quick Search</h3><div class="qsb-gr" id="qg"><div class="qsb-h">Tên</div><div class="qsb-h">URL ({{q}})</div><div class="qsb-h">Icon</div>${rows}</div><div class="qsb-a"><div class="qsb-n">Mẹo: Dùng {{q}} cho từ khóa tìm kiếm</div><div style="display:flex;gap:10px"><button class="qsb-b" id="qr">Mặc định</button><button class="qsb-b p" id="qs">Lưu</button></div></div></div>`;
+        m.innerHTML = `<div class="qsb-p"><h3>⚙️ Quick Search</h3><div class="qsb-gr" id="qg"><div class="qsb-h">Tên</div><div class="qsb-h">URL ({{q}})</div><div class="qsb-h">Icon</div>${rows}</div><div class="qsb-a"><div class="qsb-n">Mẹo: Dùng {{q}} cho từ khóa tìm kiếm</div><div style="display:flex;gap:10px"><button class="qsb-b" id="qr">Mặc định</button><button class="qsb-b p" id="qs">Lưu</button></div></div></div>`;
         m.onclick = e => e.target === m && m.remove();
         m.querySelector('#qr').onclick = () => { set(C.KEY, DEF); m.remove(); alert('Đã khôi phục!'); };
         m.querySelector('#qs').onclick = () => {
@@ -285,5 +285,5 @@
     document.addEventListener('keydown', e => { if (e.key === 'Escape') hideAll(); });
 
     // Menu
-    GM_registerMenuCommand('⚙️ Cấu hình Quick Search', openSettings);
+    GM_registerMenuCommand('⚙️ Cài đặt', openSettings);
 })();

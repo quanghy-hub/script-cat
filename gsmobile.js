@@ -96,7 +96,7 @@ const injectStyles = () => {
 let modal = null;
 const createModal = () => {
     const d = document.createElement('div'); d.id = 'ges-overlay';
-    d.innerHTML = `<div id="ges-panel"><h3 class="ges-title">📱 Mobile Gestures</h3>
+    d.innerHTML = `<div id="ges-panel"><h3 class="ges-title">⚙️ Gestures</h3>
 <div class="ges-g"><div class="ges-gt">👆 Touch</div>
 <div class="ges-r"><span class="ges-l">Long-press mở link</span><label class="ges-sw"><input type="checkbox" id="g-lp"><span class="ges-sl"></span></label></div>
 <div class="ges-r"><span class="ges-l">↳ Chế độ</span><select id="g-lpm" class="ges-s"><option value="bg">Nền</option><option value="fg">Trước</option></select></div>
@@ -229,4 +229,4 @@ const initEvents = () => {
 /* INIT */
 injectStyles();
 if (document.body) initEvents(); else document.addEventListener('DOMContentLoaded', initEvents);
-if (typeof GM_registerMenuCommand !== 'undefined') GM_registerMenuCommand('📱 Cài đặt', openSettings);
+if (typeof GM_registerMenuCommand !== 'undefined') GM_registerMenuCommand('⚙️ Cài đặt', openSettings);

@@ -418,7 +418,6 @@ const initEvents = () => {
         }
     }, { passive: true });
 
-    document.addEventListener('keydown', e => { if (e.altKey && e.shiftKey && e.code === 'KeyG') openSettings(); });
 };
 
 /* INIT */
@@ -426,4 +425,4 @@ injectStyles();
 if (document.body) initEvents();
 else document.addEventListener('DOMContentLoaded', initEvents);
 
-if (typeof GM_registerMenuCommand !== 'undefined') GM_registerMenuCommand('⚙️ Cài đặt (Alt+Shift+G)', openSettings);
+if (typeof GM_registerMenuCommand !== 'undefined') GM_registerMenuCommand('⚙️ Cài đặt', openSettings);

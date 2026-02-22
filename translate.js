@@ -279,7 +279,6 @@
     if (/INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
     const k = cfg.hotkey;
     if ((k === 'f2' && e.code === 'F2') || (k === 'f4' && e.code === 'F4') || (k === 'f8' && e.code === 'F8')) { e.preventDefault(); act(lx, ly); }
-    if (e.shiftKey && e.altKey && e.code === 'KeyX') ui();
   });
 
   // Swipe (mobile)
@@ -311,9 +310,9 @@
     ov.className = 'ilt-overlay';
     ov.innerHTML = `
       <div class="ilt-panel">
-        <h3 class="ilt-title">🌐 Cài đặt Dịch</h3>
+        <h3 class="ilt-title">⚙️ Dịch</h3>
         <div class="ilt-group">
-          <div class="ilt-group-title">⚙️ Chung</div>
+          <div class="ilt-group-title">Chung</div>
           <div class="ilt-row"><span class="ilt-label">Mode</span><select id="ilt-pm"><option value="google">Google</option><option value="gemini">Gemini</option></select></div>
           <div class="ilt-row"><span class="ilt-label">Phím tắt</span><select id="ilt-ph"><option value="f2">F2</option><option value="f4">F4</option><option value="f8">F8</option></select></div>
           <div class="ilt-row"><span class="ilt-label">Vuốt</span><select id="ilt-ps"><option value="both">Cả hai</option><option value="right">Sang phải</option><option value="left">Sang trái</option><option value="none">Tắt</option></select></div>
@@ -364,5 +363,5 @@
     requestAnimationFrame(() => ov.classList.add('open'));
   }
 
-  GM_registerMenuCommand('Settings', ui);
+  GM_registerMenuCommand('⚙️ Cài đặt', ui);
 })();
