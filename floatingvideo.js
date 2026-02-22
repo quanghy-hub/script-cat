@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Floating
 // @namespace    
-// @version      5.9.10
+// @version      5.9.11
 // @description  Floating video player optimized for mobile with video rotation
 // @author       Claude
 // @match        *://*/*
@@ -33,7 +33,7 @@
         #fvp-master-icon {
             z-index: ${ZINDEX.ICON}; width: 42px; height: 42px;
             background: rgba(0,0,0,0.6); backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.15); border-radius: 50%;
+            border-radius: 50%;
             color: #fff; display: flex; align-items: center; justify-content: center;
             cursor: move; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
             transition: transform .2s, opacity .3s, background .2s;
@@ -49,13 +49,13 @@
             background: #ff3b30; color: #fff; font-size: 10px; font-weight: 700;
             min-width: 18px; height: 18px;
             display: flex; align-items: center; justify-content: center;
-            border-radius: 50%; border: 2px solid #000;
+            border-radius: 50%;
         }
 
         #fvp-menu {
             z-index: ${ZINDEX.ICON}; display: none; flex-direction: column;
             background: rgba(20,20,20,0.95); backdrop-filter: blur(20px);
-            border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
+            border-radius: 12px;
             width: min(280px, calc(100vw - 40px)); max-height: 50vh;
             overflow-y: auto; padding: 4px 0; color: #eee;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
@@ -63,7 +63,6 @@
         
         .fvp-menu-item {
             padding: 12px 16px; font-size: 14px; cursor: pointer;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
             display: flex; gap: 10px; align-items: center;
             transition: background .2s;
         }
@@ -103,26 +102,19 @@
         .fvp-overlay {
             position: absolute; left: 0; width: 100%; padding: 0 12px;
             display: flex; align-items: center; box-sizing: border-box;
-            opacity: 1; transition: opacity .25s ease; z-index: 20;
+            opacity: 1; z-index: 20;
             pointer-events: none;
         }
         .fvp-overlay > * { pointer-events: auto; }
 
-        #fvp-head {
-            top: 0; height: 40px; padding-top: 4px; justify-content: flex-end;
-            background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+        #fvp-left-drag { 
+            position: absolute; cursor: move; touch-action: none;
+            top: 0; left: 0; bottom: 0; width: 40px; z-index: 19;
         }
-        #fvp-head-drag, #fvp-left-drag { 
-            position: absolute; cursor: move; touch-action: none; 
-        }
-        #fvp-head-drag { top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
-        #fvp-left-drag { top: 40px; left: 0; bottom: 60px; width: 25px; z-index: 19; }
-        #fvp-close { z-index: 2; font-size: 18px; width: 32px; height: 32px; margin-right: -4px; }
 
         #fvp-ctrl {
             bottom: 0; height: 60px; padding: 12px 12px 8px;
             flex-direction: column; justify-content: flex-end; gap: 6px;
-            background: linear-gradient(to top, rgba(0,0,0,0.95), rgba(0,0,0,0.8));
         }
 
         /* Seek Bar */
@@ -207,20 +199,26 @@
 
         /* Resize Handles */
         .fvp-resize-handle { position: absolute; z-index: 100; touch-action: none; }
-        .fvp-resize-r { top: 20px; right: 0; bottom: 80px; width: 20px; cursor: e-resize; }
-        .fvp-resize-b { bottom: 80px; left: 20px; right: 20px; height: 20px; cursor: s-resize; }
-        .fvp-resize-br { bottom: 80px; right: 5px; width: 30px; height: 30px; cursor: se-resize; z-index: 101; }
+        .fvp-resize-br { bottom: 74px; right: 34px; width: 30px; height: 30px; cursor: se-resize; z-index: 101; }
         .fvp-resize-br::after {
             content: ''; position: absolute; bottom: 8px; right: 8px;
-            width: 8px; height: 8px; pointer-events: none;
+            width: 10px; height: 10px; pointer-events: none;
             border-bottom: 2px solid rgba(255,255,255,0.5); 
             border-right: 2px solid rgba(255,255,255,0.5);
             border-radius: 0 0 2px 0;
         }
+        .fvp-resize-bl { bottom: 74px; left: 34px; width: 30px; height: 30px; cursor: sw-resize; z-index: 101; }
+        .fvp-resize-bl::after {
+            content: ''; position: absolute; bottom: 8px; left: 8px;
+            width: 10px; height: 10px; pointer-events: none;
+            border-bottom: 2px solid rgba(255,255,255,0.5); 
+            border-left: 2px solid rgba(255,255,255,0.5);
+            border-radius: 0 0 0 2px;
+        }
 
         /* Placeholder */
         .fvp-ph { 
-            background: #111; border: 1px dashed #333; border-radius: 8px;
+            background: #111; border-radius: 8px;
             display: flex; align-items: center; justify-content: center; opacity: 0.5; 
         }
 
@@ -492,7 +490,7 @@
 
     const renderMenu = () => {
         const list = getVideos();
-        menu.innerHTML = `<div style="padding:10px 16px;font-size:12px;color:#888;font-weight:600;border-bottom:1px solid rgba(255,255,255,0.05)">VIDEOS (${list.length})</div>`;
+        menu.innerHTML = `<div style="padding:10px 16px;font-size:12px;color:#888;font-weight:600">VIDEOS (${list.length})</div>`;
 
         if (!list.length) {
             const empty = el('div', 'fvp-menu-item', '<span>📹</span><span style="flex:1">No videos found</span>');
@@ -550,8 +548,15 @@
                 box.style.left = `${clamp(state.initX + dx, -box.offsetWidth + minVisible, innerWidth - minVisible)}px`;
                 box.style.top = `${clamp(state.initY + dy, -box.offsetHeight + minVisible, innerHeight - minVisible)}px`;
             } else if (state.isResize) {
-                if (state.resizeDir.includes('r')) box.style.width = `${Math.max(200, state.initW + dx)}px`;
-                if (state.resizeDir.includes('b')) box.style.height = `${Math.max(120, state.initH + dy)}px`;
+                if (state.resizeDir === 'bl') {
+                    const newW = Math.max(200, state.initW - dx);
+                    box.style.width = `${newW}px`;
+                    box.style.left = `${state.initX + (state.initW - newW)}px`;
+                    box.style.height = `${Math.max(120, state.initH + dy)}px`;
+                } else {
+                    box.style.width = `${Math.max(200, state.initW + dx)}px`;
+                    box.style.height = `${Math.max(120, state.initH + dy)}px`;
+                }
             }
         };
 
@@ -577,7 +582,7 @@
             state.startX = c.x; state.startY = c.y;
             state.initX = box.offsetLeft; state.initY = box.offsetTop;
         };
-        ['fvp-head-drag', 'fvp-left-drag'].forEach(id => onPointer($(id), startDrag));
+        onPointer($('fvp-left-drag'), startDrag);
 
         // Resize Handles
         box.querySelectorAll('.fvp-resize-handle').forEach(h => {
@@ -585,9 +590,10 @@
                 e.preventDefault(); e.stopPropagation();
                 const c = getCoord(e);
                 state.isResize = true;
-                state.resizeDir = h.className.includes('br') ? 'br' : h.className.includes('b') ? 'b' : 'r';
+                state.resizeDir = h.className.includes('bl') ? 'bl' : 'br';
                 state.startX = c.x; state.startY = c.y;
                 state.initW = box.offsetWidth; state.initH = box.offsetHeight;
+                state.initX = box.offsetLeft;
             };
             onPointer(h, startResize);
         });
@@ -676,13 +682,8 @@
         box = el('div', '', `
             <div id="fvp-wrapper"></div>
             <div id="fvp-left-drag"></div>
-            <div class="fvp-resize-handle fvp-resize-r"></div>
-            <div class="fvp-resize-handle fvp-resize-b"></div>
             <div class="fvp-resize-handle fvp-resize-br"></div>
-            <div id="fvp-head" class="fvp-overlay">
-                <div id="fvp-head-drag"></div>
-                <button id="fvp-close" class="fvp-btn" title="Close">✕</button>
-            </div>
+            <div class="fvp-resize-handle fvp-resize-bl"></div>
             <div id="fvp-ctrl" class="fvp-overlay">
                 <div id="fvp-seek-row">
                     <button id="fvp-play-pause" class="fvp-btn" title="Play/Pause">▶</button>
@@ -696,6 +697,7 @@
                     </div>
                 </div>
                 <div class="fvp-control-row">
+                    <button id="fvp-close" class="fvp-btn" title="Close">✕</button>
                     <div class="fvp-volume-container">
                         <button id="fvp-vol-btn" class="fvp-btn" title="Mute/Unmute">🔊</button>
                         <div class="fvp-volume-wrapper">
