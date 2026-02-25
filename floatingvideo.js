@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Floating
 // @namespace    
-// @version      5.9.12
+// @version      5.9.13
 // @description  Floating video player optimized for mobile with video rotation
 // @author       Claude
 // @match        *://*/*
@@ -111,6 +111,13 @@
             position: absolute; cursor: move; touch-action: none;
             top: 0; left: 0; bottom: 0; width: 40px; z-index: 19;
         }
+
+        #fvp-close {
+            position: absolute; left: 4px; top: 50%; transform: translateY(-50%);
+            z-index: 21; background: rgba(58, 58, 58, 0.6); border-radius: 50%;
+            width: 32px; height: 32px;
+        }
+        #fvp-close:hover, #fvp-close:active { background: rgba(255,0,0,0.6); }
 
         #fvp-ctrl {
             bottom: 0; height: 60px; padding: 12px 12px 8px;
@@ -682,6 +689,7 @@
         box = el('div', '', `
             <div id="fvp-wrapper"></div>
             <div id="fvp-left-drag"></div>
+            <button id="fvp-close" class="fvp-btn" title="Close">✕</button>
             <div class="fvp-resize-handle fvp-resize-br"></div>
             <div class="fvp-resize-handle fvp-resize-bl"></div>
             <div id="fvp-ctrl" class="fvp-overlay">
@@ -697,7 +705,6 @@
                     </div>
                 </div>
                 <div class="fvp-control-row">
-                    <button id="fvp-close" class="fvp-btn" title="Close">✕</button>
                     <div class="fvp-volume-container">
                         <button id="fvp-vol-btn" class="fvp-btn" title="Mute/Unmute">🔊</button>
                         <div class="fvp-volume-wrapper">
