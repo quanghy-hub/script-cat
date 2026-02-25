@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Floating
 // @namespace    
-// @version      5.9.13
+// @version      5.9.14
 // @description  Floating video player optimized for mobile with video rotation
 // @author       Claude
 // @match        *://*/*
@@ -116,8 +116,9 @@
             position: absolute; left: 4px; top: 50%; transform: translateY(-50%);
             z-index: 21; background: rgba(58, 58, 58, 0.6); border-radius: 50%;
             width: 32px; height: 32px;
+            opacity: 0.3; transition: opacity .2s, background .2s;
         }
-        #fvp-close:hover, #fvp-close:active { background: rgba(255,0,0,0.6); }
+        #fvp-close:hover, #fvp-close:active { background: rgba(255,0,0,0.6); opacity: 1; }
 
         #fvp-ctrl {
             bottom: 0; height: 60px; padding: 12px 12px 8px;
@@ -541,6 +542,7 @@
         // Global Move/End
         const move = e => {
             if (!state.isDrag && !state.isResize && !state.isIconDrag) return;
+            if (e.cancelable) e.preventDefault();
             const c = getCoord(e);
             const dx = c.x - state.startX, dy = c.y - state.startY;
 
@@ -568,6 +570,8 @@
         };
 
         const end = e => {
+            const wasActive = state.isDrag || state.isResize || state.isIconDrag;
+            if (wasActive && e.cancelable) e.preventDefault();
             if (state.isIconDrag) {
                 if (Math.hypot(getCoord(e).x - state.startX, getCoord(e).y - state.startY) < 8) toggleMenu();
                 else saveIconPos();
@@ -576,9 +580,9 @@
             state.isDrag = state.isResize = state.isIconDrag = false;
         };
 
-        document.addEventListener('touchmove', move, { passive: true });
+        document.addEventListener('touchmove', move, { passive: false });
         document.addEventListener('mousemove', move);
-        document.addEventListener('touchend', end, { passive: true });
+        document.addEventListener('touchend', end, { passive: false });
         document.addEventListener('mouseup', end);
 
         // Player Drag
