@@ -145,7 +145,7 @@ const initEvents = () => {
         const t = e.touches[0], now = Date.now();
 
         // Edge swipe
-        if (isInEdgeZone(t.clientX)) {
+        if (isInEdgeZone(t.clientX) && !e.target.closest?.('#fvp-container')) {
             State.edge = { active: true, lastY: t.clientY, lastTime: now, velocity: 0 };
             return;
         }
