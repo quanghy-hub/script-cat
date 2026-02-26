@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gestures
 // @namespace    gestures
-// @version      4.3.1
+// @version      4.3.2
 // @description  Long-press/Right-click mở link, Double-tap đóng tab, Edge swipe scroll, Pager
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
@@ -355,7 +355,7 @@ const initEvents = () => {
         State.lpFired = false;
         if (isEditable(e.target) || e.touches.length !== 1) return;
         const t = e.touches[0], now = Date.now();
-        if (CFG.edge.enabled && t.clientX < CFG.edge.width) { State.edge = { active: true, lastY: t.clientY }; cancelLP(); return; }
+        if (CFG.edge.enabled && t.clientX < CFG.edge.width && !e.target.closest?.('#fvp-container')) { State.edge = { active: true, lastY: t.clientY }; cancelLP(); return; }
         if (CFG.dblTap.enabled && !isInteractive(e.target)) {
             const last = State.dblTap.last;
             const timeSinceLast = last ? now - last.time : Infinity;
