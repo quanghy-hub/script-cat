@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Floating
 // @namespace    
-// @version      5.9.14
+// @version      5.9.15
 // @description  Floating video player optimized for mobile with video rotation
 // @author       Claude
 // @match        *://*/*
