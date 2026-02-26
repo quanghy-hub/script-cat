@@ -609,6 +609,10 @@
             onPointer(h, startResize);
         });
 
+        // Block touch pass-through to page: stop page from tracking touch + prevent scrolling
+        box.addEventListener('touchstart', e => { e.stopPropagation(); }, { passive: true });
+        box.addEventListener('touchmove', e => { e.preventDefault(); }, { passive: false });
+
         // Button Handlers
         const btn = (id, fn) => $(id)?.addEventListener('click', e => { e.stopPropagation(); fn(); });
         btn('fvp-close', restore);
