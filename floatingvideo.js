@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Floating
 // @namespace    
-// @version      5.9.16
+// @version      5.9.17
 // @description  Floating video player optimized for mobile with video rotation
 // @author       Claude
 // @match        *://*/*
@@ -614,13 +614,15 @@
             onPointer(h, startResize);
         });
 
-        // Block ALL touch pass-through + handle drag/resize at box level
+        // Capture-phase preventDefault blocks scrolling on Chrome Android (bubble-phase is ignored)
+        box.addEventListener('touchmove', e => { e.preventDefault(); }, { capture: true, passive: false });
+
         box.addEventListener('touchstart', e => {
             e.stopPropagation();
             if (!e.target.closest('input, button')) e.preventDefault();
         }, { passive: false });
         box.addEventListener('touchmove', e => {
-            e.preventDefault(); e.stopPropagation();
+            e.stopPropagation();
             move(e);
         }, { passive: false });
         box.addEventListener('touchend', e => {
