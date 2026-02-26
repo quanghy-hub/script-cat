@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Floating
 // @namespace    
-// @version      5.9.15
+// @version      5.9.16
 // @description  Floating video player optimized for mobile with video rotation
 // @author       Claude
 // @match        *://*/*
@@ -580,10 +580,15 @@
             state.isDrag = state.isResize = state.isIconDrag = false;
         };
 
-        document.addEventListener('touchmove', move, { passive: false });
         document.addEventListener('mousemove', move);
-        document.addEventListener('touchend', end, { passive: false });
         document.addEventListener('mouseup', end);
+
+        // Touch move/end for icon drag
+        icon.addEventListener('touchmove', e => {
+            if (state.isIconDrag && e.cancelable) e.preventDefault();
+            move(e);
+        }, { passive: false });
+        icon.addEventListener('touchend', e => { end(e); }, { passive: false });
 
         // Player Drag
         const startDrag = e => {
@@ -609,9 +614,19 @@
             onPointer(h, startResize);
         });
 
-        // Block touch pass-through to page: stop page from tracking touch + prevent scrolling
-        box.addEventListener('touchstart', e => { e.stopPropagation(); }, { passive: true });
-        box.addEventListener('touchmove', e => { e.preventDefault(); }, { passive: false });
+        // Block ALL touch pass-through + handle drag/resize at box level
+        box.addEventListener('touchstart', e => {
+            e.stopPropagation();
+            if (!e.target.closest('input, button')) e.preventDefault();
+        }, { passive: false });
+        box.addEventListener('touchmove', e => {
+            e.preventDefault(); e.stopPropagation();
+            move(e);
+        }, { passive: false });
+        box.addEventListener('touchend', e => {
+            e.stopPropagation();
+            end(e);
+        }, { passive: false });
 
         // Button Handlers
         const btn = (id, fn) => $(id)?.addEventListener('click', e => { e.stopPropagation(); fn(); });
