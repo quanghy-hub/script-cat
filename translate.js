@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Translate
 // @namespace    translate
-// @version      2.7.10
+// @version      2.7.11
 // @description  Swipe/hotkey translate. Video safe zone. Optimized for mobile.
 // @author       you
 // @match        http://*/*
@@ -24,7 +24,7 @@
     provider: 'google', geminiKey: '', geminiModel: 'gemini-1.5-flash',
     hotkey: 'f2', swipeEnabled: true, swipeDir: 'both',
     swipePx: 60, swipeSlopeMax: 0.4,
-    fontScale: 0.95, mutedColor: '#00bfff', bgBlend: 'transparent',
+    fontScale: 0.95, mutedColor: '#00bfff',
     dedupeSeconds: 0.7
   };
   let cfg = { ...def, ...JSON.parse(GM_getValue(K) || '{}') };
@@ -33,7 +33,7 @@
   /* ================= STYLES ================= */
   const sty = document.createElement('style');
   sty.textContent = `
-    :root{--ilt-fs:${cfg.fontScale}em;--ilt-fg:${cfg.mutedColor};--ilt-bg:${cfg.bgBlend}}
+    :root{--ilt-fs:${cfg.fontScale}em;--ilt-fg:${cfg.mutedColor}}
     .ilt-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2147483646;opacity:0;pointer-events:none;transition:opacity .2s}
     .ilt-overlay.open{opacity:1;pointer-events:auto}
     .ilt-panel{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.95);width:min(320px,90vw);max-height:85vh;overflow-y:auto;background:#1e1e1e;padding:16px;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);font:13px/1.5 system-ui;z-index:2147483647;opacity:0;pointer-events:none;transition:.2s;color:#eee}
@@ -55,7 +55,7 @@
     .ilt-btn.primary{background:#007AFF}
     .ilt-btn.primary:hover{background:#0066d6}
     .ilt-trans-container{margin:8px 0;width:100%;animation:iF .2s;padding-top:6px}
-    .ilt-trans{padding:6px 12px;background:var(--ilt-bg);color:var(--ilt-fg);font:italic var(--ilt-fs)/1.6 system-ui;white-space:pre-wrap}
+    .ilt-trans{padding:6px 12px;color:var(--ilt-fg);font:italic var(--ilt-fs)/1.6 system-ui;white-space:pre-wrap}
     .ilt-meta{font-size:.75em;opacity:.6}
     @keyframes iF{from{transform:translateY(-5px);opacity:0}to{transform:none;opacity:1}}
   `;
@@ -66,7 +66,6 @@
     const r = document.documentElement.style;
     r.setProperty('--ilt-fs', cfg.fontScale + 'em');
     r.setProperty('--ilt-fg', cfg.mutedColor);
-    r.setProperty('--ilt-bg', cfg.bgBlend);
   }
 
   /* ================= TEXT DETECTION ================= */
@@ -176,7 +175,15 @@
   /** Insert translation box: after node if clipped, else as child */
   function insertTrans(node, w) {
     if (isClipped(node)) {
-      node.insertAdjacentElement('afterend', w);
+      // Reddit: inserting afterend can land outside shadow DOM slots → stays above text.
+      // Instead, override clipping and append inside the node.
+      if (isReddit && node.closest('shreddit-comment')) {
+        node.style.overflow = 'visible';
+        node.style.maxHeight = 'none';
+        node.appendChild(w);
+      } else {
+        node.insertAdjacentElement('afterend', w);
+      }
     } else {
       node.appendChild(w);
     }

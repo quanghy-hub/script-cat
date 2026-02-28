@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video
 // @namespace    
-// @version      2.8.3
+// @version      2.8.4
 // @description  Swipe seek optimized for Chrome mobile
 // @match        *://*/*
 // @grant        GM_setValue
@@ -58,8 +58,14 @@
       const v = fs.querySelector('video');
       if (v) return v;
     }
+    // Prioritize floating player video if visible
+    const fvp = document.getElementById('fvp-container');
+    if (fvp && fvp.style.display !== 'none') {
+      const v = fvp.querySelector('#fvp-wrapper video');
+      if (v) return v;
+    }
     return [...document.querySelectorAll('video')]
-      .find(v => v.offsetWidth && v.offsetHeight) || null;
+      .find(v => v.offsetWidth && v.offsetHeight && !v.closest('#fvp-wrapper')) || null;
   };
 
   const getVideoAtPoint = (x, y) => {
@@ -134,7 +140,8 @@
         cfg.boostLevel = cfg.boostLevel >= cfg.maxBoost ? 1 : cfg.boostLevel + 1;
         save('boostLevel', cfg.boostLevel);
         applyBoost(v);
-        boostMap.get(v)?.gain && (boostMap.get(v).gain.value = cfg.boostLevel);
+        const g = boostMap.get(v);
+        if (g) g.gain.value = cfg.boostLevel;
         break;
     }
   }, true);
