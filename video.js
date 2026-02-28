@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Video
 // @namespace    
-// @version      2.8.2
+// @version      2.8.3
 // @description  Swipe seek optimized for Chrome mobile
 // @match        *://*/*
 // @grant        GM_setValue
@@ -65,6 +65,7 @@
   const getVideoAtPoint = (x, y) => {
     for (const v of document.querySelectorAll('video')) {
       if (!v.offsetWidth || !v.offsetHeight) continue;
+      if (v.closest('#fvp-wrapper')) continue;
       const r = v.getBoundingClientRect();
       if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return v;
     }
@@ -153,7 +154,18 @@
     if (e.touches.length !== 1) return;
 
     const t = e.touches[0];
-    const video = getVideoAtPoint(t.clientX, t.clientY);
+
+    // If touch is on floating player, use its video directly
+    let video;
+    const fvp = document.getElementById('fvp-container');
+    if (fvp && fvp.style.display !== 'none') {
+      const fr = fvp.getBoundingClientRect();
+      if (t.clientX >= fr.left && t.clientX <= fr.right &&
+        t.clientY >= fr.top && t.clientY <= fr.bottom) {
+        video = fvp.querySelector('#fvp-wrapper video');
+      }
+    }
+    if (!video) video = getVideoAtPoint(t.clientX, t.clientY);
     if (!video?.duration) return;
 
     // Safe zone: bottom 15%
