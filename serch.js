@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Search
 // @namespace    search
-// @version      2.3.3
+// @version      2.3.4
 // @description  Quick Search Bubble - Dual Bubble Edition
 // @match        *://*/*
 // @exclude      *://mail.google.com/*
@@ -21,7 +21,7 @@
     // === CONFIG ===
     const C = {
         KEY: 'qsb.providers.v5',
-        OFF: 8, SZ: 28, IMG: 18, MAX: 6, ROW: 4,
+        SZ: 28, IMG: 18, MAX: 6, ROW: 4,
         TOAST: 1200, SEL: 300, HOVER: 120, HIDE: 220, LONG: 450
     };
 
@@ -91,8 +91,8 @@
     let textBubble, textGrid, imgBubble, imgGrid;
     let textCtx = null, imgCtx = null, hoverImg, timers = {};
     let showTime = { text: 0, img: 0 };
-    let mouseX = 0, mouseY = 0;
-    document.addEventListener('mousemove', e => { mouseX = e.pageX; mouseY = e.pageY; }, { passive: true });
+    let mouseX = 0;
+    document.addEventListener('mousemove', e => { mouseX = e.pageX; }, { passive: true });
 
     const toast = (msg, x, y) => {
         const el = Object.assign(document.createElement('div'), { className: 'qsb-t', textContent: msg });
@@ -216,7 +216,7 @@
             const r = s.getRangeAt(0).getBoundingClientRect();
             if (r.width > 0) {
                 const posX = mouseX || (r.left + scrollX);
-                const posY = (mouseY || (r.bottom + scrollY)) + C.OFF;
+                const posY = r.bottom + scrollY + 30;
                 textCtx = { type: 'text', text: t, x: posX, y: posY };
                 showText(buildItems(textCtx), textCtx.x, textCtx.y, C.ROW);
             }
@@ -275,12 +275,7 @@
         }
     });
     document.addEventListener('scroll', () => {
-        const now = Date.now();
-        clearTimeout(timers.sc);
-        timers.sc = setTimeout(() => {
-            if (now - showTime.img > 400) hideImg();
-            if (now - showTime.text > 400) hideText();
-        }, 200);
+        if (Date.now() - showTime.img > 400) hideImg();
     }, { capture: true, passive: true });
     document.addEventListener('keydown', e => { if (e.key === 'Escape') hideAll(); });
 
