@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Floating
 // @namespace    
-// @version      5.9.20
+// @version      5.9.18
 // @description  Floating video player optimized for mobile with video rotation
 // @author       Claude
 // @match        *://*/*
@@ -112,53 +112,23 @@
             top: 0; left: 0; bottom: 0; width: 40px; z-index: 19;
         }
 
-        /* Left Panel - Vertical button stack */
-        #fvp-left-panel {
-            position: absolute; left: 2px; top: 50%; transform: translateY(-50%);
-            z-index: 21; display: flex; flex-direction: column;
-            align-items: center; gap: 1px;
-            opacity: 0.4; transition: opacity .2s;
+        #fvp-close {
+            position: absolute; left: 4px; top: 50%; transform: translateY(-50%);
+            z-index: 21; background: rgba(58, 58, 58, 0.6); border-radius: 50%;
+            width: 32px; height: 32px;
+            opacity: 0.3; transition: opacity .2s, background .2s;
         }
-        #fvp-left-panel:hover, #fvp-left-panel:active { opacity: 1; }
-        #fvp-left-panel .fvp-btn { 
-            min-width: 30px; min-height: 30px; font-size: 15px;
-            background: rgba(58,58,58,0.4); border-radius: 6px;
-        }
-        #fvp-left-panel .fvp-separator {
-            width: 20px; height: 1px; background: rgba(255,255,255,0.15); margin: 0;
-        }
-        #fvp-close:hover, #fvp-close:active { background: rgba(255,0,0,0.6) !important; }
+        #fvp-close:hover, #fvp-close:active { background: rgba(255,0,0,0.6); opacity: 1; }
 
         #fvp-ctrl {
-            bottom: 0; height: 28px; padding: 2px 12px 4px;
-            flex-direction: row; justify-content: center; gap: 0;
+            bottom: 0; height: 60px; padding: 12px 12px 8px;
+            flex-direction: column; justify-content: flex-end; gap: 6px;
         }
-
-        /* Resolution Popup */
-        #fvp-res-popup {
-            position: absolute; left: 38px; bottom: 50%;
-            transform: translateY(50%);
-            z-index: 22; display: none; flex-direction: column;
-            background: rgba(20,20,20,0.95); backdrop-filter: blur(15px);
-            border-radius: 8px; padding: 4px 0; min-width: 90px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-        }
-        .fvp-res-item {
-            padding: 6px 12px; font-size: 12px; color: #ccc;
-            cursor: pointer; white-space: nowrap;
-            transition: background .15s;
-        }
-        .fvp-res-item:hover { background: rgba(255,255,255,0.1); }
-        .fvp-res-item.active { color: #1da6f0; font-weight: 600; }
 
         /* Seek Bar */
-        #fvp-seek-row { display: flex; align-items: center; gap: 6px; width: 100%; }
-        #fvp-time-display {
-            flex-shrink: 0; font-size: 10px; color: #1da6f0;
-            font-weight: 500; white-space: nowrap; pointer-events: none;
-            min-width: 70px;
-        }
-        #fvp-seek-container { position: relative; flex: 1; min-width: 0; padding: 14px 0; margin: -14px 0; }
+        #fvp-seek-row { display: flex; align-items: center; gap: 8px; width: 100%; }
+        #fvp-play-pause { font-size: 18px; min-width: 28px; min-height: 28px; flex-shrink: 0; align-self: center; line-height: 1; }
+        #fvp-seek-container { position: relative; flex: 1; min-width: 0; padding: 20px 0; margin: -20px 0; }
         
         #fvp-seek-track {
             position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
@@ -182,6 +152,42 @@
             box-shadow: 0 1px 4px rgba(0,0,0,0.5);
         }
         #fvp-seek:active::-webkit-slider-thumb { background: #0d8fd8; }
+        
+        #fvp-time-display {
+            position: absolute; top: 50%; left: 0; right: 0; 
+            transform: translateY(-50%); padding: 0 2px;
+            display: flex; justify-content: space-between;
+            font-size: 10px; color: #1da6f0; pointer-events: none;
+        }
+        #fvp-current-time, #fvp-duration {
+            padding: 1px 6px;
+            border-radius: 4px; font-weight: 500;
+        }
+
+        /* Control Row */
+        .fvp-control-row {
+            display: flex; width: 100%; min-height: 36px;
+            align-items: center; justify-content: space-between;
+            gap: 6px; flex-wrap: nowrap;
+        }
+        
+        .fvp-volume-container { display: flex; align-items: center; gap: 4px; flex-shrink: 0; min-width: 90px; }
+        .fvp-volume-wrapper { padding: 10px 0; margin: -10px 0; display: flex; align-items: center; }
+        .fvp-volume-slider {
+            -webkit-appearance: none; height: 6px; width: 60px;
+            background: rgba(255,255,255,0.3); border-radius: 3px;
+            cursor: pointer; flex-shrink: 0;
+        }
+        .fvp-volume-slider::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 18px; height: 18px;
+            background: #fff; border-radius: 50%; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
+        
+        .fvp-icon-group {
+            display: flex; align-items: center; gap: 4px;
+            justify-content: flex-end; flex-wrap: nowrap; flex: 1; min-width: 0;
+        }
 
         /* Buttons */
         .fvp-btn {
@@ -196,10 +202,12 @@
         .fvp-btn:active, .fvp-btn:hover { 
             background: rgba(255,255,255,0.2); transform: scale(0.95); color: #fff; 
         }
+        #fvp-fit, #fvp-zoom, #fvp-full, #fvp-rotate { font-size: 16px; }
+        #fvp-prev, #fvp-next { min-width: 28px; min-height: 28px; font-size: 16px; padding: 2px; }
 
         /* Resize Handles */
         .fvp-resize-handle { position: absolute; z-index: 100; touch-action: none; }
-        .fvp-resize-br { bottom: 34px; right: 34px; width: 30px; height: 30px; cursor: se-resize; z-index: 101; }
+        .fvp-resize-br { bottom: 74px; right: 34px; width: 30px; height: 30px; cursor: se-resize; z-index: 101; }
         .fvp-resize-br::after {
             content: ''; position: absolute; bottom: 8px; right: 8px;
             width: 10px; height: 10px; pointer-events: none;
@@ -207,7 +215,7 @@
             border-right: 2px solid rgba(255,255,255,0.5);
             border-radius: 0 0 2px 0;
         }
-        .fvp-resize-bl { bottom: 34px; left: 34px; width: 30px; height: 30px; cursor: sw-resize; z-index: 101; }
+        .fvp-resize-bl { bottom: 74px; left: 34px; width: 30px; height: 30px; cursor: sw-resize; z-index: 101; }
         .fvp-resize-bl::after {
             content: ''; position: absolute; bottom: 8px; left: 8px;
             width: 10px; height: 10px; pointer-events: none;
@@ -232,15 +240,19 @@
 
         /* Responsive */
         @media (max-width: 480px) {
-            #fvp-ctrl { padding: 2px 6px 2px; height: 26px; }
+            #fvp-ctrl { padding: 8px 8px 6px; height: 55px; }
+            .fvp-control-row { gap: 4px; }
             .fvp-btn { min-width: 28px; min-height: 28px; font-size: 16px; }
-            #fvp-left-panel .fvp-btn { min-width: 26px; min-height: 26px; font-size: 13px; }
-            #fvp-time-display { font-size: 9px; min-width: 60px; }
+            .fvp-volume-container { min-width: 60px; }
+            .fvp-volume-slider { width: 40px; }
+            .fvp-icon-group { gap: 3px; }
+            #fvp-prev, #fvp-next { min-width: 26px; min-height: 26px; font-size: 14px; }
         }
         @media (max-width: 360px) {
-            .fvp-btn { min-width: 26px; min-height: 26px; font-size: 14px; }
-            #fvp-left-panel .fvp-btn { min-width: 24px; min-height: 24px; font-size: 12px; }
-            #fvp-time-display { font-size: 8px; min-width: 55px; }
+            .fvp-control-row { gap: 2px; }
+            .fvp-btn, #fvp-fit, #fvp-zoom, #fvp-full, #fvp-rotate { min-width: 26px; min-height: 26px; font-size: 14px; }
+            .fvp-volume-slider { width: 35px; }
+            #fvp-prev, #fvp-next { min-width: 24px; min-height: 24px; font-size: 13px; }
         }
 
         @keyframes fvp-fade-in { 
@@ -255,7 +267,7 @@
     const $ = id => document.getElementById(id);
     const el = (tag, cls, html) => Object.assign(document.createElement(tag), { className: cls || '', innerHTML: html || '' });
     const getCoord = e => { const t = e.touches?.[0] || e.changedTouches?.[0] || e; return { x: t.clientX, y: t.clientY }; };
-    const formatTime = s => `${Math.floor(s / 60)}.${(Math.floor(s) % 60).toString().padStart(2, '0')}`;
+    const formatTime = s => `${Math.floor(s / 60)}:${(Math.floor(s) % 60).toString().padStart(2, '0')}`;
     const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
     const onPointer = (el, fn, passive = false) => { el?.addEventListener('touchstart', fn, { passive }); el?.addEventListener('mousedown', fn); };
 
@@ -320,6 +332,7 @@
         if (!curVid) return;
         const v = curVid.muted ? 0 : curVid.volume;
         $('fvp-vol-btn').textContent = v === 0 ? '🔇' : v < 0.5 ? '🔉' : '🔊';
+        if (!curVid.muted) $('fvp-vol').value = v;
     };
 
     const updatePlayPauseUI = () => {
@@ -409,6 +422,7 @@
         // Reset UI
         $('fvp-zoom').textContent = ZOOM_ICONS[0];
         $('fvp-rotate').style.transform = '';
+        $('fvp-vol').value = v.volume;
         updateVolUI();
 
         box.style.display = 'flex';
@@ -442,16 +456,11 @@
         }
 
         // Seek bar update loop
-        const updateTimeDisplay = () => {
-            const cur = curVid.currentTime || 0;
-            const dur = curVid.duration || 0;
-            $('fvp-time-display').textContent = `${formatTime(cur)}/${formatTime(dur)}`;
-        };
         const updateLoop = () => {
             if (!curVid) return;
             if (!state.isSeeking && curVid.duration && !isNaN(curVid.duration)) {
                 $('fvp-seek').value = (curVid.currentTime / curVid.duration) * 10000;
-                updateTimeDisplay();
+                $('fvp-current-time').textContent = formatTime(curVid.currentTime);
             }
             if (curVid.buffered.length > 0 && curVid.duration) {
                 $('fvp-buffer').style.width = `${(curVid.buffered.end(curVid.buffered.length - 1) / curVid.duration) * 100}%`;
@@ -461,9 +470,9 @@
         state.rafId = requestAnimationFrame(updateLoop);
 
         v.onloadedmetadata = () => {
-            if (v.duration && !isNaN(v.duration)) updateTimeDisplay();
+            if (v.duration && !isNaN(v.duration)) $('fvp-duration').textContent = formatTime(v.duration);
         };
-        if (v.readyState >= 1 && v.duration) updateTimeDisplay();
+        if (v.readyState >= 1 && v.duration) $('fvp-duration').textContent = formatTime(v.duration);
 
         v.onplay = v.onpause = updatePlayPauseUI;
         v.onended = () => switchVid(1);
@@ -649,16 +658,13 @@
             if (!curVid) return;
             curVid.paused ? curVid.play().catch(() => { }) : curVid.pause();
         });
-        btn('fvp-res', () => toggleResPopup());
 
         // Seek Bar
         const seek = $('fvp-seek');
         const seekTo = val => {
             if (curVid?.duration) {
                 curVid.currentTime = (val / 10000) * curVid.duration;
-                const cur = curVid.currentTime || 0;
-                const dur = curVid.duration || 0;
-                $('fvp-time-display').textContent = `${formatTime(cur)}/${formatTime(dur)}`;
+                $('fvp-current-time').textContent = formatTime(curVid.currentTime);
             }
         };
         seek?.addEventListener('input', e => { state.isSeeking = true; seekTo(e.target.value); });
@@ -671,97 +677,11 @@
         }, { passive: true });
         seek?.addEventListener('change', () => { state.isSeeking = false; });
         seek?.addEventListener('touchend', () => { state.isSeeking = false; }, { passive: true });
-    };
 
-    // ============================================
-    // RESOLUTION SELECTOR
-    // ============================================
-    const getQualityLevels = () => {
-        const levels = [];
-        try {
-            // YouTube player API
-            const ytPlayer = document.querySelector('#movie_player');
-            if (ytPlayer?.getAvailableQualityLevels) {
-                const ytLevels = ytPlayer.getAvailableQualityLevels();
-                const ytLabels = { highres: '4K+', hd2160: '2160p', hd1440: '1440p', hd1080: '1080p', hd720: '720p', large: '480p', medium: '360p', small: '240p', tiny: '144p' };
-                const curQ = ytPlayer.getPlaybackQuality?.() || '';
-                ytLevels.forEach(q => {
-                    if (q === 'auto') return;
-                    levels.push({ label: ytLabels[q] || q, value: q, active: q === curQ, type: 'yt' });
-                });
-                if (levels.length) return levels;
-            }
-        } catch (e) { }
-        try {
-            // HLS.js - find instance attached to video
-            if (curVid) {
-                const hls = curVid._hls || curVid.hls || window.hls;
-                if (hls?.levels?.length) {
-                    hls.levels.forEach((lv, i) => {
-                        const h = lv.height || lv.attrs?.RESOLUTION?.split('x')[1];
-                        levels.push({ label: h ? `${h}p` : `Level ${i}`, value: i, active: hls.currentLevel === i || hls.loadLevel === i, type: 'hls' });
-                    });
-                    // Sort by height descending
-                    levels.sort((a, b) => parseInt(b.label) - parseInt(a.label));
-                    levels.unshift({ label: 'Auto', value: -1, active: hls.currentLevel === -1, type: 'hls' });
-                    if (levels.length > 1) return levels;
-                }
-            }
-        } catch (e) { }
-        try {
-            // Generic <source> elements
-            if (curVid) {
-                const sources = curVid.querySelectorAll('source');
-                if (sources.length > 1) {
-                    sources.forEach((src, i) => {
-                        const label = src.getAttribute('label') || src.getAttribute('size') || src.getAttribute('data-quality') || `Source ${i + 1}`;
-                        levels.push({ label, value: src.src, active: curVid.currentSrc === src.src, type: 'src' });
-                    });
-                }
-            }
-        } catch (e) { }
-        return levels;
-    };
-
-    const setQuality = (item) => {
-        try {
-            if (item.type === 'yt') {
-                const ytPlayer = document.querySelector('#movie_player');
-                ytPlayer?.setPlaybackQualityRange?.(item.value, item.value);
-                ytPlayer?.setPlaybackQuality?.(item.value);
-            } else if (item.type === 'hls') {
-                const hls = curVid?._hls || curVid?.hls || window.hls;
-                if (hls) hls.currentLevel = item.value;
-            } else if (item.type === 'src') {
-                const t = curVid.currentTime;
-                const playing = !curVid.paused;
-                curVid.src = item.value;
-                curVid.currentTime = t;
-                if (playing) curVid.play().catch(() => { });
-            }
-        } catch (e) { }
-        $('fvp-res-popup').style.display = 'none';
-    };
-
-    const toggleResPopup = () => {
-        const popup = $('fvp-res-popup');
-        if (!popup) return;
-        const isShown = popup.style.display === 'flex';
-        if (isShown) { popup.style.display = 'none'; return; }
-        const levels = getQualityLevels();
-        popup.innerHTML = '';
-        if (!levels.length) {
-            const noItem = el('div', 'fvp-res-item', 'N/A');
-            noItem.style.opacity = '0.5';
-            popup.appendChild(noItem);
-        } else {
-            levels.forEach(lv => {
-                const item = el('div', `fvp-res-item${lv.active ? ' active' : ''}`, lv.label);
-                item.onclick = e => { e.stopPropagation(); setQuality(lv); };
-                popup.appendChild(item);
-            });
-        }
-        popup.style.display = 'flex';
+        // Volume
+        $('fvp-vol')?.addEventListener('input', e => {
+            if (curVid) { curVid.volume = parseFloat(e.target.value); curVid.muted = false; updateVolUI(); }
+        });
     };
 
     // ============================================
@@ -793,27 +713,35 @@
         box = el('div', '', `
             <div id="fvp-wrapper"></div>
             <div id="fvp-left-drag"></div>
-            <div id="fvp-left-panel">
-                <button id="fvp-vol-btn" class="fvp-btn" title="Mute/Unmute">🔊</button>
-                <button id="fvp-res" class="fvp-btn" title="Quality" style="font-size:11px;font-weight:700">HD</button>
-                <div id="fvp-res-popup"></div>
-                <button id="fvp-rotate" class="fvp-btn" title="Rotate 90°">↻</button>
-                <button id="fvp-zoom" class="fvp-btn" title="Zoom video">+</button>
-                <button id="fvp-fit" class="fvp-btn" title="Fit mode">⤢</button>
-                <button id="fvp-full" class="fvp-btn" title="Fullscreen">⛶</button>
-                <button id="fvp-close" class="fvp-btn" title="Close">✕</button>
-                <button id="fvp-play-pause" class="fvp-btn" title="Play/Pause">▶</button>
-                <button id="fvp-prev" class="fvp-btn" title="Previous">⏮</button>
-                <button id="fvp-next" class="fvp-btn" title="Next">⏭</button>
-            </div>
+            <button id="fvp-close" class="fvp-btn" title="Close">✕</button>
             <div class="fvp-resize-handle fvp-resize-br"></div>
             <div class="fvp-resize-handle fvp-resize-bl"></div>
             <div id="fvp-ctrl" class="fvp-overlay">
                 <div id="fvp-seek-row">
-                    <span id="fvp-time-display">0.00/0.00</span>
+                    <button id="fvp-play-pause" class="fvp-btn" title="Play/Pause">▶</button>
                     <div id="fvp-seek-container">
+                        <div id="fvp-time-display">
+                            <span id="fvp-current-time">0:00</span>
+                            <span id="fvp-duration">0:00</span>
+                        </div>
                         <div id="fvp-seek-track"><div id="fvp-buffer"></div></div>
                         <input type="range" id="fvp-seek" min="0" max="10000" step="1" value="0" title="Seek">
+                    </div>
+                </div>
+                <div class="fvp-control-row">
+                    <div class="fvp-volume-container">
+                        <button id="fvp-vol-btn" class="fvp-btn" title="Mute/Unmute">🔊</button>
+                        <div class="fvp-volume-wrapper">
+                            <input type="range" class="fvp-volume-slider" id="fvp-vol" min="0" max="1" step="0.05" value="1" title="Volume">
+                        </div>
+                    </div>
+                    <div class="fvp-icon-group">
+                        <button id="fvp-rotate" class="fvp-btn" title="Rotate 90°">↻</button>
+                        <button id="fvp-fit" class="fvp-btn" title="Fit mode">⤢</button>
+                        <button id="fvp-zoom" class="fvp-btn" title="Zoom video">+</button>
+                        <button id="fvp-full" class="fvp-btn" title="Fullscreen">⛶</button>
+                        <button id="fvp-prev" class="fvp-btn" title="Previous">⏮</button>
+                        <button id="fvp-next" class="fvp-btn" title="Next">⏭</button>
                     </div>
                 </div>
             </div>
