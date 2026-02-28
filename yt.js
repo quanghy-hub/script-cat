@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YSub
 // @namespace    yt
-// @version      3.0.1
+// @version      3.1.0
 // @description  Bilingual Subtitles with Settings and Drag Support
 // @match        https://www.youtube.com/*
 // @updateURL    https://raw.githubusercontent.com/quanghy-hub/script-cat/refs/heads/main/yt.js
@@ -23,7 +23,9 @@
         STORAGE_KEY: 'yt-subtitle-settings',
         CACHE_LIMIT: 500,
         DEBOUNCE_MS: 100,
-        SENTENCE_STABLE_MS: 300,
+        MIN_CHUNK_WORDS: 6,
+        MAX_CHUNK_WORDS: 14,
+        CHUNK_FLUSH_MS: 800,
         TRANSLATE_API: 'https://translate.googleapis.com/translate_a/single',
         SENTENCE_END: /[.!?;:。！？；：]\s*$/
     };
@@ -95,13 +97,15 @@
         enabled: false,
         observer: null,
         processTimeout: null,
-        sentenceTimeout: null,
+        flushTimeout: null,
         cache: new Map(),
         isDragging: false,
         dragStart: { x: 0, y: 0 },
         containerStart: { x: 0, y: 0 },
         lastRawText: '',
         lastStableText: '',
+        lastLineText: '',
+        wordBuffer: [],
         settingsClickHandler: null
     };
 
@@ -355,47 +359,93 @@
         async process() {
             const captionWindows = $$('.caption-window');
             if (!captionWindows.length) {
+                await this.flushBuffer();
                 State.lastRawText = '';
+                State.lastLineText = '';
                 return this.removeContainer();
             }
 
             const lastWindow = captionWindows[captionWindows.length - 1];
 
-            // Chỉ lấy dòng cuối cùng (caption-visual-line cuối) — dòng mới nhất YouTube đang hiện
+            // Lấy TẤT CẢ dòng caption để không mất chữ khi YouTube hiện nhiều dòng
             const lines = lastWindow.querySelectorAll('.caption-visual-line');
             let currentText;
 
             if (lines.length > 0) {
-                // Lấy segments từ dòng cuối cùng
-                const lastLine = lines[lines.length - 1];
-                const segments = lastLine.querySelectorAll(SEL.captionSegment);
-                currentText = Array.from(segments).map(s => s.textContent.trim()).filter(Boolean).join(' ').trim();
+                currentText = Array.from(lines).map(line => {
+                    const segments = line.querySelectorAll(SEL.captionSegment);
+                    return Array.from(segments).map(s => s.textContent.trim()).filter(Boolean).join(' ');
+                }).filter(Boolean).join(' ').trim();
             } else {
-                // Fallback: lấy tất cả segments nếu không có visual-line
                 const segments = $$(SEL.captionSegment, lastWindow);
                 if (!segments.length) {
+                    await this.flushBuffer();
                     State.lastRawText = '';
+                    State.lastLineText = '';
                     return this.removeContainer();
                 }
                 currentText = Array.from(segments).map(s => s.textContent.trim()).filter(Boolean).join(' ').trim();
             }
 
-            if (!currentText) return this.removeContainer();
+            if (!currentText) {
+                await this.flushBuffer();
+                return this.removeContainer();
+            }
             if (currentText === State.lastRawText) return;
 
             State.lastRawText = currentText;
-            clearTimeout(State.sentenceTimeout);
 
-            // Dịch ngay nếu đã có cache hoặc câu đã kết thúc
-            if (State.cache.has(currentText.trim()) || CONFIG.SENTENCE_END.test(currentText)) {
-                await this.translateAndShow(currentText);
+            // So sánh word-level để tìm từ mới
+            const prevWords = State.lastLineText ? State.lastLineText.split(/\s+/).filter(Boolean) : [];
+            const currWords = currentText.split(/\s+/).filter(Boolean);
+
+            // Kiểm tra xem dòng hiện tại có phải tiếp nối dòng trước không
+            let isContinuation = prevWords.length > 0 && prevWords.length <= currWords.length;
+            if (isContinuation) {
+                for (let i = 0; i < prevWords.length; i++) {
+                    if (prevWords[i] !== currWords[i]) { isContinuation = false; break; }
+                }
+            }
+
+            if (isContinuation) {
+                // Cùng dòng đang mở rộng — chỉ thêm từ mới
+                const newWords = currWords.slice(prevWords.length);
+                State.wordBuffer.push(...newWords);
             } else {
-                // Đợi caption ổn định rồi mới dịch (tránh dịch khi text đang gõ dở)
-                State.sentenceTimeout = setTimeout(async () => {
-                    if (State.lastRawText === currentText) {
-                        await this.translateAndShow(currentText);
-                    }
-                }, CONFIG.SENTENCE_STABLE_MS);
+                // Dòng mới — flush buffer cũ trước (dòng trước đã xong)
+                await this.flushBuffer();
+                State.wordBuffer.push(...currWords);
+            }
+
+            State.lastLineText = currentText;
+
+            // Flush ngay nếu câu kết thúc bằng dấu câu
+            if (CONFIG.SENTENCE_END.test(currentText) && State.wordBuffer.length > 0) {
+                await this.flushBuffer();
+                return;
+            }
+
+            // Đủ từ cho 1 chunk → dịch và hiển thị
+            if (State.wordBuffer.length >= CONFIG.MIN_CHUNK_WORDS) {
+                const chunk = State.wordBuffer.splice(0, CONFIG.MAX_CHUNK_WORDS);
+                const chunkText = chunk.join(' ');
+                await this.translateAndShow(chunkText);
+            }
+
+            // Timeout flush cho phần từ còn lại trong buffer
+            clearTimeout(State.flushTimeout);
+            if (State.wordBuffer.length > 0) {
+                State.flushTimeout = setTimeout(async () => {
+                    await this.flushBuffer();
+                }, CONFIG.CHUNK_FLUSH_MS);
+            }
+        },
+
+        async flushBuffer() {
+            clearTimeout(State.flushTimeout);
+            if (State.wordBuffer.length > 0) {
+                const chunkText = State.wordBuffer.splice(0).join(' ');
+                await this.translateAndShow(chunkText);
             }
         },
 
@@ -589,11 +639,13 @@
     function cleanup() {
         Observer.stop();
         clearTimeout(State.processTimeout);
-        clearTimeout(State.sentenceTimeout);
+        clearTimeout(State.flushTimeout);
         Translation.removeContainer(true);
         State.enabled = false;
         State.lastRawText = '';
         State.lastStableText = '';
+        State.lastLineText = '';
+        State.wordBuffer = [];
         // Cleanup settings panel listener
         if (State.settingsClickHandler) {
             document.removeEventListener('click', State.settingsClickHandler);
