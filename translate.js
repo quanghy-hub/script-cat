@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Translate
 // @namespace    translate
-// @version      2.7.11
+// @version      2.7.12
 // @description  Swipe/hotkey translate. Video safe zone. Optimized for mobile.
 // @author       you
 // @match        http://*/*
@@ -12,6 +12,7 @@
 // @grant        GM_xmlhttpRequest
 // @connect      translate.googleapis.com
 // @connect      generativelanguage.googleapis.com
+// @connect      api.z.ai
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -21,7 +22,8 @@
   /* ================= CONFIG ================= */
   const K = 'inline_t_cfg::GLOBAL';
   const def = {
-    provider: 'google', geminiKey: '', geminiModel: 'gemini-1.5-flash',
+    provider: 'google', geminiKey: '', geminiModel: 'gemini-2.5-flash-lite',
+    zaiKey: '', zaiModel: 'glm-4.7-flash',
     hotkey: 'f2', swipeEnabled: true, swipeDir: 'both',
     swipePx: 60, swipeSlopeMax: 0.4,
     fontScale: 0.95, mutedColor: '#00bfff',
@@ -56,8 +58,9 @@
     .ilt-btn.primary:hover{background:#0066d6}
     .ilt-trans-container{margin:8px 0;width:100%;animation:iF .2s;padding-top:6px}
     .ilt-trans{padding:6px 12px;color:var(--ilt-fg);font:italic var(--ilt-fs)/1.6 system-ui;white-space:pre-wrap}
-    .ilt-meta{font-size:.75em;opacity:.6}
+    .ilt-meta{font-size:.75em;opacity:.6;animation:iP 1s infinite}
     @keyframes iF{from{transform:translateY(-5px);opacity:0}to{transform:none;opacity:1}}
+    @keyframes iP{0%,100%{opacity:.6}50%{opacity:.2}}
   `;
   document.head.appendChild(sty);
 
@@ -156,7 +159,7 @@
     if (text) {
       inner.textContent = text;
     } else {
-      inner.innerHTML = '<span class="ilt-meta">…</span>';
+      inner.innerHTML = '<span class="ilt-meta">đang dịch…</span>';
     }
     w.appendChild(inner);
     return w;
@@ -221,8 +224,8 @@
 
     try {
       let res;
+      const lang = /[àáảãạăằắẳẵặâầấẩẫậ]/.test(txt) ? 'English' : 'Vietnamese';
       if (cfg.provider === 'gemini' && cfg.geminiKey) {
-        const lang = /[àáảãạăằắẳẵặâầấẩẫậ]/.test(txt) ? 'English' : 'Vietnamese';
         res = await new Promise((ok, fail) => GM_xmlhttpRequest({
           method: 'POST',
           url: `https://generativelanguage.googleapis.com/v1beta/models/${cfg.geminiModel}:generateContent?key=${cfg.geminiKey}`,
@@ -230,13 +233,40 @@
           data: JSON.stringify({ contents: [{ parts: [{ text: `Translate to ${lang}:\n${txt}` }] }] }),
           onload: e => {
             try {
+              if (e.status >= 400) { fail(new Error(`Gemini HTTP ${e.status}: ${e.responseText.slice(0, 300)}`)); return; }
               const data = JSON.parse(e.responseText);
               const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
               if (text) ok(text);
-              else fail(new Error('Empty Gemini response: ' + e.responseText.slice(0, 200)));
+              else fail(new Error('Empty Gemini response: ' + e.responseText.slice(0, 300)));
             } catch (x) { fail(x); }
           },
-          onerror: () => fail(new Error('Gemini network error'))
+          onerror: e => fail(new Error('Gemini network error: ' + (e?.statusText || 'unknown')))
+        }));
+      } else if (cfg.provider === 'zai' && cfg.zaiKey) {
+        res = await new Promise((ok, fail) => GM_xmlhttpRequest({
+          method: 'POST',
+          url: 'https://api.z.ai/api/paas/v4/chat/completions',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${cfg.zaiKey}`
+          },
+          data: JSON.stringify({
+            model: cfg.zaiModel,
+            messages: [
+              { role: 'system', content: 'You are a translator. Output only the translated text, no explanations.' },
+              { role: 'user', content: `Translate to ${lang}:\n${txt}` }
+            ]
+          }),
+          onload: e => {
+            try {
+              if (e.status >= 400) { fail(new Error(`Z.ai HTTP ${e.status}: ${e.responseText.slice(0, 300)}`)); return; }
+              const data = JSON.parse(e.responseText);
+              const text = data?.choices?.[0]?.message?.content?.trim();
+              if (text) ok(text);
+              else fail(new Error('Empty Z.ai response: ' + e.responseText.slice(0, 300)));
+            } catch (x) { fail(x); }
+          },
+          onerror: e => fail(new Error('Z.ai network error: ' + (e?.statusText || 'unknown')))
         }));
       } else {
         const gtUrl = tl => `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${tl}&dt=t&q=${encodeURIComponent(txt)}`;
@@ -257,8 +287,14 @@
       w.firstChild.textContent = cleaned;
     } catch (e) {
       console.error('[Translate]', e);
-      w.textContent = 'Err';
-      setTimeout(() => w.remove(), 2000);
+      const msg = e.message || 'Unknown error';
+      // Show short error in the translation box
+      const short = msg.length > 80 ? msg.slice(0, 80) + '…' : msg;
+      w.firstChild.textContent = '⚠ ' + short;
+      w.firstChild.style.color = '#ff6b6b';
+      w.firstChild.style.fontStyle = 'normal';
+      w.firstChild.style.fontSize = '0.8em';
+      setTimeout(() => w.remove(), 5000);
     }
   }
 
@@ -320,7 +356,7 @@
         <h3 class="ilt-title">⚙️ Dịch</h3>
         <div class="ilt-group">
           <div class="ilt-group-title">Chung</div>
-          <div class="ilt-row"><span class="ilt-label">Mode</span><select id="ilt-pm"><option value="google">Google</option><option value="gemini">Gemini</option></select></div>
+          <div class="ilt-row"><span class="ilt-label">Mode</span><select id="ilt-pm"><option value="google">Google</option><option value="gemini">Gemini</option><option value="zai">Z.ai</option></select></div>
           <div class="ilt-row"><span class="ilt-label">Phím tắt</span><select id="ilt-ph"><option value="f2">F2</option><option value="f4">F4</option><option value="f8">F8</option></select></div>
           <div class="ilt-row"><span class="ilt-label">Vuốt</span><select id="ilt-ps"><option value="both">Cả hai</option><option value="right">Sang phải</option><option value="left">Sang trái</option><option value="none">Tắt</option></select></div>
         </div>
@@ -331,8 +367,13 @@
         </div>
         <div class="ilt-group">
           <div class="ilt-group-title">🤖 Gemini</div>
-          <div class="ilt-row"><span class="ilt-label">Model</span><input id="ilt-pmd" type="text" placeholder="gemini-1.5-flash"></div>
+          <div class="ilt-row"><span class="ilt-label">Model</span><input id="ilt-pmd" type="text" placeholder="gemini-2.5-flash-lite"></div>
           <div class="ilt-row"><input id="ilt-pk" type="password" placeholder="Gemini API Key" style="width:100%"></div>
+        </div>
+        <div class="ilt-group">
+          <div class="ilt-group-title">🇨🇳 Z.ai</div>
+          <div class="ilt-row"><span class="ilt-label">Model</span><input id="ilt-zmd" type="text" placeholder="glm-4.7-flash"></div>
+          <div class="ilt-row"><input id="ilt-zk" type="password" placeholder="Z.ai API Key" style="width:100%"></div>
         </div>
         <div class="ilt-actions"><button class="ilt-btn" id="ilt-close">Đóng</button><button class="ilt-btn primary" id="ilt-save">Lưu</button></div>
       </div>`;
@@ -345,6 +386,8 @@
     $('ilt-ps').value = cfg.swipeEnabled ? cfg.swipeDir : 'none';
     $('ilt-pk').value = cfg.geminiKey;
     $('ilt-pmd').value = cfg.geminiModel;
+    $('ilt-zk').value = cfg.zaiKey;
+    $('ilt-zmd').value = cfg.zaiModel;
     $('ilt-pfs').value = cfg.fontScale;
     $('ilt-pc').value = cfg.mutedColor;
 
@@ -354,7 +397,9 @@
       cfg.provider = $('ilt-pm').value;
       cfg.hotkey = $('ilt-ph').value;
       cfg.geminiKey = $('ilt-pk').value;
-      cfg.geminiModel = $('ilt-pmd').value.trim() || 'gemini-1.5-flash';
+      cfg.geminiModel = $('ilt-pmd').value.trim() || 'gemini-2.5-flash-lite';
+      cfg.zaiKey = $('ilt-zk').value;
+      cfg.zaiModel = $('ilt-zmd').value.trim() || 'glm-4.7-flash';
       cfg.fontScale = parseFloat($('ilt-pfs').value) || 0.95;
       cfg.mutedColor = $('ilt-pc').value;
 
