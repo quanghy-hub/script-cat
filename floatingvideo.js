@@ -607,7 +607,7 @@
 
         box.addEventListener('touchstart', e => {
             e.stopPropagation();
-            if (!e.target.closest('input, button')) e.preventDefault();
+            if (!e.target.closest('input, button, .fvp-res-item')) e.preventDefault();
         }, { passive: false });
         // Capture-phase preventDefault blocks scrolling on Chrome Android (bubble-phase is ignored)
         box.addEventListener('touchmove', e => {
